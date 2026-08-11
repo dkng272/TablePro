@@ -1,4 +1,5 @@
 import Foundation
+import TableProPluginKit
 
 enum ChartSpecInferrer {
     static func infer(from tableRows: TableRows) -> ChartSpec? {
