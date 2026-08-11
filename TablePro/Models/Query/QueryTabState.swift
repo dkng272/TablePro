@@ -474,6 +474,7 @@ struct TabDisplayState: Equatable {
     mutating func replaceUnpinnedResults(with newResults: [ResultSet]) {
         resultSets = resultSets.filter(\.isPinned) + newResults
         activeResultSetId = newResults.last?.id ?? resultSets.last?.id
+        resultsViewMode = .data
     }
 
     mutating func removeUnpinnedResults() {
