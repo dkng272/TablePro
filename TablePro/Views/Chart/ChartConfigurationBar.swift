@@ -1,15 +1,33 @@
 import SwiftUI
 
 enum ChartConfigurationPolicy {
-    static func selectX(_ column: ChartColumnID, in spec: ChartSpec) -> ChartSpec {
+    static func selectX(
+        _ column: ChartColumnID,
+        in spec: ChartSpec,
+        tableRows: TableRows
+    ) -> ChartSpec {
         guard column != spec.xColumn else { return spec }
-        var updated = spec
-        let previousX = spec.xColumn
-        updated.xColumn = column
-        updated.yColumns.removeAll { $0 == column }
-        if updated.yColumns.isEmpty {
-            updated.yColumns = [previousX]
+        let numericColumns = tableRows.columns.enumerated().compactMap { index, name -> ChartColumnID? in
+            guard index < tableRows.columnTypes.count else { return nil }
+            switch tableRows.columnTypes[index] {
+            case .integer, .decimal:
+                return ChartColumnID(ordinal: index, name: name)
+            default:
+                return nil
+            }
         }
+        let numericColumnSet = Set(numericColumns)
+        var yColumns = spec.yColumns.filter {
+            $0 != column && numericColumnSet.contains($0)
+        }
+        if yColumns.isEmpty, let replacement = numericColumns.first(where: { $0 != column }) {
+            yColumns = [replacement]
+        }
+        guard !yColumns.isEmpty else { return spec }
+
+        var updated = spec
+        updated.xColumn = column
+        updated.yColumns = yColumns
         return updated
     }
 }
@@ -83,7 +101,13 @@ struct ChartConfigurationBar: View {
     private var xColumnBinding: Binding<ChartColumnID> {
         Binding(
             get: { spec.xColumn },
-            set: { spec = ChartConfigurationPolicy.selectX($0, in: spec) }
+            set: {
+                spec = ChartConfigurationPolicy.selectX(
+                    $0,
+                    in: spec,
+                    tableRows: tableRows
+                )
+            }
         )
     }
 

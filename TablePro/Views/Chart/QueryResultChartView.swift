@@ -25,6 +25,15 @@ enum QueryResultChartState: Equatable {
     }
 }
 
+struct QueryResultChartReconciliation: Equatable {
+    let storedSpec: ChartSpec?
+    let resolvedSpec: ChartSpec
+
+    var specToPersist: ChartSpec? {
+        storedSpec == resolvedSpec ? nil : resolvedSpec
+    }
+}
+
 enum QueryResultChartDataState: Equatable {
     case ready(ChartData)
     case invalidConfiguration
@@ -49,10 +58,14 @@ struct QueryResultChartView: View {
             case .needsConfiguration:
                 needsConfigurationView
             case .configured(let resolvedSpec):
+                let reconciliation = QueryResultChartReconciliation(
+                    storedSpec: spec,
+                    resolvedSpec: resolvedSpec
+                )
                 configuredChart(spec: resolvedSpec)
-                    .onChange(of: resolvedSpec, initial: true) { _, currentSpec in
-                        if spec != currentSpec {
-                            spec = currentSpec
+                    .onChange(of: reconciliation, initial: true) { _, current in
+                        if let repairedSpec = current.specToPersist {
+                            spec = repairedSpec
                         }
                     }
             }

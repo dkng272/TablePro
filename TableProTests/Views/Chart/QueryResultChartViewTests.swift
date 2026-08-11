@@ -40,6 +40,40 @@ struct QueryResultChartViewTests {
         #expect(reconciled == ChartSpecInferrer.infer(from: rows))
     }
 
+    @Test("An invalid stored spec requests persistence when the displayed spec is unchanged")
+    func invalidStoredSpecRequestsPersistence() {
+        let rows = Self.compatibleRows()
+        let quarter = ChartColumnID(ordinal: 0, name: "quarter")
+        let invalid = ChartSpec(chartType: .bar, xColumn: quarter, yColumns: [])
+        guard let displayed = ChartSpecInferrer.infer(from: rows) else {
+            Issue.record("Expected an inferred chart spec")
+            return
+        }
+
+        let reconciliation = QueryResultChartReconciliation(
+            storedSpec: invalid,
+            resolvedSpec: displayed
+        )
+
+        #expect(reconciliation.specToPersist == displayed)
+    }
+
+    @Test("A reconciled stored spec does not request another persistence update")
+    func reconciledSpecDoesNotRequestPersistence() {
+        let rows = Self.compatibleRows()
+        guard let displayed = ChartSpecInferrer.infer(from: rows) else {
+            Issue.record("Expected an inferred chart spec")
+            return
+        }
+
+        let reconciliation = QueryResultChartReconciliation(
+            storedSpec: displayed,
+            resolvedSpec: displayed
+        )
+
+        #expect(reconciliation.specToPersist == nil)
+    }
+
     @Test("A schema change reconciles a stored spec to available columns")
     func schemaChangeReconciles() {
         let rows = Self.compatibleRows()
@@ -63,17 +97,47 @@ struct QueryResultChartViewTests {
         #expect(reconciled != stored)
     }
 
-    @Test("Selecting the only Y column as X swaps the axes without overlap")
-    func selectingYAsXSwapsAxes() {
+    @Test("Selecting the only numeric Y as X rejects the change")
+    func selectingOnlyNumericYAsXIsRejected() {
+        let rows = Self.compatibleRows()
         let quarter = ChartColumnID(ordinal: 0, name: "quarter")
         let revenue = ChartColumnID(ordinal: 1, name: "revenue")
         let original = ChartSpec(chartType: .bar, xColumn: quarter, yColumns: [revenue])
 
-        let updated = ChartConfigurationPolicy.selectX(revenue, in: original)
+        let updated = ChartConfigurationPolicy.selectX(
+            revenue,
+            in: original,
+            tableRows: rows
+        )
+
+        #expect(updated == original)
+        #expect(!updated.yColumns.contains(updated.xColumn))
+    }
+
+    @Test("Selecting a Y as X chooses another numeric column for Y")
+    func selectingYAsXUsesAnotherNumericY() {
+        let rows = TableRows.from(
+            queryRows: [["Q1", "10", "3"]],
+            columns: ["quarter", "revenue", "profit"],
+            columnTypes: [
+                .text(rawType: nil),
+                .decimal(rawType: nil),
+                .integer(rawType: nil),
+            ]
+        )
+        let quarter = ChartColumnID(ordinal: 0, name: "quarter")
+        let revenue = ChartColumnID(ordinal: 1, name: "revenue")
+        let profit = ChartColumnID(ordinal: 2, name: "profit")
+        let original = ChartSpec(chartType: .bar, xColumn: quarter, yColumns: [revenue])
+
+        let updated = ChartConfigurationPolicy.selectX(
+            revenue,
+            in: original,
+            tableRows: rows
+        )
 
         #expect(updated.xColumn == revenue)
-        #expect(updated.yColumns == [quarter])
-        #expect(!updated.yColumns.contains(updated.xColumn))
+        #expect(updated.yColumns == [profit])
     }
 
     @Test("Sort orders provide compact localized labels")
