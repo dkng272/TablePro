@@ -232,6 +232,52 @@ struct QueryResultChartViewTests {
         #expect(state == .invalidConfiguration)
     }
 
+    @Test("Presentation-only spec changes reuse the chart data key")
+    func presentationChangesReuseDataKey() {
+        var spec = Self.chartSpec()
+        let original = QueryResultChartDataKey(dataRevision: 7, spec: spec)
+
+        spec.chartType = .area
+        spec.title = "Quarterly revenue"
+        spec.showsLegend = false
+
+        #expect(QueryResultChartDataKey(dataRevision: 7, spec: spec) == original)
+    }
+
+    @Test("Data-affecting spec changes invalidate the chart data key")
+    func dataChangesInvalidateDataKey() {
+        let spec = Self.chartSpec()
+        let original = QueryResultChartDataKey(dataRevision: 7, spec: spec)
+        var changedX = spec
+        changedX.xColumn = .init(ordinal: 2, name: "profit")
+        var changedY = spec
+        changedY.yColumns = [.init(ordinal: 2, name: "profit")]
+        var changedSeries = spec
+        changedSeries.seriesColumn = .init(ordinal: 3, name: "region")
+        var changedSort = spec
+        changedSort.sortOrder = .descendingX
+
+        #expect(QueryResultChartDataKey(dataRevision: 8, spec: spec) != original)
+        #expect(QueryResultChartDataKey(dataRevision: 7, spec: changedX) != original)
+        #expect(QueryResultChartDataKey(dataRevision: 7, spec: changedY) != original)
+        #expect(QueryResultChartDataKey(dataRevision: 7, spec: changedSeries) != original)
+        #expect(QueryResultChartDataKey(dataRevision: 7, spec: changedSort) != original)
+    }
+
+    @Test("Point accessibility label includes series and X column coordinate")
+    func pointAccessibilityIncludesXContext() throws {
+        let rows = Self.compatibleRows()
+        let data = try ChartDataBuilder.build(from: rows, spec: Self.chartSpec())
+        let point = try #require(data.points.first)
+
+        let label = ChartPointAccessibilityFormatter.label(
+            for: point,
+            xColumnName: "quarter"
+        )
+
+        #expect(label == "revenue, quarter: Q1")
+    }
+
     @Test("The chart view can be constructed")
     func viewConstruction() {
         let view = QueryResultChartView(tableRows: TableRows(), spec: .constant(nil))
@@ -245,6 +291,14 @@ struct QueryResultChartViewTests {
             queryRows: [["Q1", "10"]],
             columns: ["quarter", "revenue"],
             columnTypes: [.text(rawType: nil), .decimal(rawType: nil)]
+        )
+    }
+
+    private static func chartSpec() -> ChartSpec {
+        ChartSpec(
+            chartType: .bar,
+            xColumn: .init(ordinal: 0, name: "quarter"),
+            yColumns: [.init(ordinal: 1, name: "revenue")]
         )
     }
 }

@@ -6,6 +6,13 @@ import TableProPluginKit
 enum ChartSpecInferrer {
     // MARK: Internal
 
+    enum ColumnKind {
+        case numeric
+        case temporal
+        case category
+        case unsupported
+    }
+
     static func infer(from tableRows: TableRows) -> ChartSpec? {
         let columns = tableRows.columns.enumerated().map {
             ChartColumnID(ordinal: $0.offset, name: $0.element)
@@ -29,18 +36,7 @@ enum ChartSpecInferrer {
         kind(at: ordinal, in: tableRows) == .numeric
     }
 
-    // MARK: Private
-
-    private enum Kind {
-        case numeric
-        case temporal
-        case category
-        case unsupported
-    }
-
-    private static let numericLocale = Locale(identifier: "en_US_POSIX")
-
-    private static func kind(at ordinal: Int, in tableRows: TableRows) -> Kind {
+    static func kind(at ordinal: Int, in tableRows: TableRows) -> ColumnKind {
         guard ordinal < tableRows.columnTypes.count else {
             return sampledKind(at: ordinal, in: tableRows)
         }
@@ -61,7 +57,12 @@ enum ChartSpecInferrer {
         }
     }
 
-    private static func sampledKind(at ordinal: Int, in tableRows: TableRows) -> Kind {
+    // MARK: Private
+
+    private static let iso8601DateFormatter = ISO8601DateFormatter()
+    private static let numericLocale = Locale(identifier: "en_US_POSIX")
+
+    private static func sampledKind(at ordinal: Int, in tableRows: TableRows) -> ColumnKind {
         let values = tableRows.rows.prefix(50).compactMap { row in
             row.values[ordinal].asText?.trimmingCharacters(in: .whitespacesAndNewlines)
         }.filter { !$0.isEmpty }
@@ -79,7 +80,7 @@ enum ChartSpecInferrer {
     }
 
     private static func isISO8601Date(_ value: String) -> Bool {
-        ISO8601DateFormatter().date(from: value) != nil
+        iso8601DateFormatter.date(from: value) != nil
             || DateFormatter.iso8601Date.date(from: value) != nil
     }
 }

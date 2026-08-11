@@ -30,6 +30,26 @@ enum ChartDataBuilder {
 
     // MARK: Private
 
+    private struct SeriesGroup {
+        let id: String
+        let order: Int
+        let pointIndices: [Int]
+    }
+
+    private static let iso8601DateFormatter = ISO8601DateFormatter()
+    private static let sqlDateFormatters: [DateFormatter] = [
+        "yyyy-MM-dd",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy-MM-dd'T'HH:mm:ss",
+    ].map { format in
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = format
+        return formatter
+    }
+
     private static func buildAllPoints(
         from tableRows: TableRows,
         spec: ChartSpec
@@ -38,32 +58,52 @@ enum ChartDataBuilder {
     {
         var points: [ChartPoint] = []
         var skipped = 0
+        let xKind = ChartSpecInferrer.kind(at: spec.xColumn.ordinal, in: tableRows)
+        let yNameCounts = Dictionary(grouping: spec.yColumns, by: \.name).mapValues(\.count)
+        let measureLabels = Dictionary(uniqueKeysWithValues: spec.yColumns.map { column in
+            let label = yNameCounts[column.name, default: 0] > 1
+                ? "\(column.name) (\(column.ordinal + 1))"
+                : column.name
+            return (column, label)
+        })
 
         for (rowIndex, row) in tableRows.rows.enumerated() {
             guard let x = parseX(
                 row.values[spec.xColumn.ordinal].asText,
-                type: tableRows.columnTypes[safe: spec.xColumn.ordinal]
+                kind: xKind
             ) else {
                 skipped += spec.yColumns.count
                 continue
             }
-            let explicitSeries = spec.seriesColumn.flatMap { row.values[$0.ordinal].asText }
+            let explicitSeriesValue = spec.seriesColumn.flatMap { row.values[$0.ordinal].asText }
 
             for yColumn in spec.yColumns {
                 guard let yText = row.values[yColumn.ordinal].asText,
-                      let y = Double(yText) else
+                      let y = parseFiniteDouble(yText) else
                 {
                     skipped += 1
                     continue
                 }
 
-                let series = explicitSeries ?? yColumn.name
+                let measureLabel = measureLabels[yColumn, default: yColumn.name]
+                let seriesID = makeSeriesID(
+                    measure: yColumn,
+                    groupColumn: spec.seriesColumn,
+                    groupValue: explicitSeriesValue
+                )
+                let seriesLabel = makeSeriesLabel(
+                    measure: measureLabel,
+                    measureCount: spec.yColumns.count,
+                    groupColumn: spec.seriesColumn,
+                    groupValue: explicitSeriesValue
+                )
                 points.append(ChartPoint(
-                    id: "row:\(rowIndex):y:\(yColumn.ordinal):series:\(series)",
+                    id: "row:\(rowIndex):series:\(seriesID)",
                     sourceRow: rowIndex,
                     x: x,
                     y: y,
-                    series: series
+                    seriesID: seriesID,
+                    seriesLabel: seriesLabel
                 ))
             }
         }
@@ -71,40 +111,76 @@ enum ChartDataBuilder {
         return (points, skipped)
     }
 
-    private static func parseX(_ text: String?, type: ColumnType?) -> ChartXValue? {
+    private static func makeSeriesID(
+        measure: ChartColumnID,
+        groupColumn: ChartColumnID?,
+        groupValue: String?
+    )
+        -> String
+    {
+        let measureComponent = lengthPrefixed(measure.id)
+        guard let groupColumn else {
+            return "measure:\(measureComponent)"
+        }
+        let groupComponent = groupValue.map { "value:\(lengthPrefixed($0))" } ?? "null"
+        return "measure:\(measureComponent):group:\(lengthPrefixed(groupColumn.id)):\(groupComponent)"
+    }
+
+    private static func makeSeriesLabel(
+        measure: String,
+        measureCount: Int,
+        groupColumn: ChartColumnID?,
+        groupValue: String?
+    )
+        -> String
+    {
+        guard groupColumn != nil else {
+            return measure
+        }
+        let group = groupValue ?? String(localized: "NULL")
+        guard measureCount > 1 else {
+            return group
+        }
+        return String(format: String(localized: "%@ by %@"), measure, group)
+    }
+
+    private static func lengthPrefixed(_ value: String) -> String {
+        "\(value.utf8.count):\(value)"
+    }
+
+    private static func parseX(
+        _ text: String?,
+        kind: ChartSpecInferrer.ColumnKind
+    )
+        -> ChartXValue?
+    {
         guard let value = text else {
             return nil
         }
 
-        switch type {
-        case .integer,
-             .decimal:
-            return Double(value).map(ChartXValue.number)
-        case .date,
-             .timestamp,
-             .datetime:
+        switch kind {
+        case .numeric:
+            return parseFiniteDouble(value).map(ChartXValue.number)
+        case .temporal:
             return parseDate(value).map(ChartXValue.date)
-        default:
+        case .category,
+             .unsupported:
             return .category(value)
         }
     }
 
+    private static func parseFiniteDouble(_ value: String) -> Double? {
+        guard let parsed = Double(value), parsed.isFinite else {
+            return nil
+        }
+        return parsed
+    }
+
     private static func parseDate(_ value: String) -> Date? {
-        if let date = ISO8601DateFormatter().date(from: value) {
+        if let date = iso8601DateFormatter.date(from: value) {
             return date
         }
-
-        for format in ["yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss"] {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            formatter.dateFormat = format
-            if let date = formatter.date(from: value) {
-                return date
-            }
-        }
-        return nil
+        return sqlDateFormatters.lazy.compactMap { $0.date(from: value) }.first
     }
 
     private static func sort(_ points: [ChartPoint], order: ChartSortOrder) -> [ChartPoint] {
@@ -159,15 +235,114 @@ enum ChartDataBuilder {
         if limit == 1 {
             return [points[0]]
         }
-        return (0 ..< limit).map { index in
-            let sampledIndex = Int(round(Double(index) * Double(points.count - 1) / Double(limit - 1)))
-            return points[sampledIndex]
+
+        let groups = orderedSeriesGroups(in: points)
+        let retainedGroups = retainedSeriesGroups(groups, limit: limit)
+        let quotas = proportionalQuotas(for: retainedGroups, limit: limit)
+        var retainedPointIndices = Set<Int>()
+
+        for group in retainedGroups {
+            let quota = quotas[group.id, default: 0]
+            retainedPointIndices.formUnion(sample(group.pointIndices, limit: quota))
+        }
+
+        return points.enumerated().compactMap { index, point in
+            retainedPointIndices.contains(index) ? point : nil
         }
     }
-}
 
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
+    private static func orderedSeriesGroups(in points: [ChartPoint]) -> [SeriesGroup] {
+        var seriesOrder: [String] = []
+        var pointIndicesBySeries: [String: [Int]] = [:]
+
+        for (index, point) in points.enumerated() {
+            if pointIndicesBySeries[point.seriesID] == nil {
+                seriesOrder.append(point.seriesID)
+            }
+            pointIndicesBySeries[point.seriesID, default: []].append(index)
+        }
+
+        return seriesOrder.enumerated().map { order, seriesID in
+            SeriesGroup(
+                id: seriesID,
+                order: order,
+                pointIndices: pointIndicesBySeries[seriesID, default: []]
+            )
+        }
+    }
+
+    private static func retainedSeriesGroups(
+        _ groups: [SeriesGroup],
+        limit: Int
+    )
+        -> [SeriesGroup]
+    {
+        let minimumRequired = groups.reduce(0) { $0 + min($1.pointIndices.count, 2) }
+        guard minimumRequired > limit else {
+            return groups
+        }
+
+        var remaining = limit
+        return groups.filter { group in
+            let minimum = min(group.pointIndices.count, 2)
+            guard minimum <= remaining else {
+                return false
+            }
+            remaining -= minimum
+            return true
+        }
+    }
+
+    private static func proportionalQuotas(
+        for groups: [SeriesGroup],
+        limit: Int
+    )
+        -> [String: Int]
+    {
+        var quotas = Dictionary(uniqueKeysWithValues: groups.map {
+            ($0.id, min($0.pointIndices.count, 2))
+        })
+        let assignedMinimums = quotas.values.reduce(0, +)
+        let residualCounts = groups.map { max(0, $0.pointIndices.count - quotas[$0.id, default: 0]) }
+        let totalResidual = residualCounts.reduce(0, +)
+        let availableSlots = min(limit - assignedMinimums, totalResidual)
+        guard availableSlots > 0, totalResidual > 0 else {
+            return quotas
+        }
+
+        var remainders: [(group: SeriesGroup, fraction: Double)] = []
+        var assignedResidual = 0
+        for (group, residualCount) in zip(groups, residualCounts) {
+            let exact = Double(availableSlots) * Double(residualCount) / Double(totalResidual)
+            let allocation = Int(exact.rounded(.down))
+            quotas[group.id, default: 0] += allocation
+            assignedResidual += allocation
+            remainders.append((group, exact - Double(allocation)))
+        }
+
+        let extraSlots = availableSlots - assignedResidual
+        let remainderOrder = remainders.sorted { left, right in
+            if left.fraction == right.fraction {
+                return left.group.order < right.group.order
+            }
+            return left.fraction > right.fraction
+        }
+        for remainder in remainderOrder.prefix(extraSlots) {
+            quotas[remainder.group.id, default: 0] += 1
+        }
+        return quotas
+    }
+
+    private static func sample(_ indices: [Int], limit: Int) -> [Int] {
+        guard limit > 0, indices.count > limit else {
+            return limit > 0 ? indices : []
+        }
+        if limit == 1 {
+            return [indices[0]]
+        }
+        return (0 ..< limit).map { index in
+            let sampledIndex = Int(round(Double(index) * Double(indices.count - 1) / Double(limit - 1)))
+            return indices[sampledIndex]
+        }
     }
 }
