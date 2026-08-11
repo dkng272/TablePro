@@ -1,5 +1,29 @@
 import SwiftUI
 
+enum ChartConfigurationPolicy {
+    static func selectX(_ column: ChartColumnID, in spec: ChartSpec) -> ChartSpec {
+        guard column != spec.xColumn else { return spec }
+        var updated = spec
+        let previousX = spec.xColumn
+        updated.xColumn = column
+        updated.yColumns.removeAll { $0 == column }
+        if updated.yColumns.isEmpty {
+            updated.yColumns = [previousX]
+        }
+        return updated
+    }
+}
+
+extension ChartSortOrder {
+    var localizedName: String {
+        switch self {
+        case .source: String(localized: "Source Order")
+        case .ascendingX: String(localized: "X Ascending")
+        case .descendingX: String(localized: "X Descending")
+        }
+    }
+}
+
 struct ChartConfigurationBar: View {
     let tableRows: TableRows
     @Binding var spec: ChartSpec
@@ -19,7 +43,7 @@ struct ChartConfigurationBar: View {
                     }
                 }
 
-                Picker(String(localized: "X Axis"), selection: $spec.xColumn) {
+                Picker(String(localized: "X Axis"), selection: xColumnBinding) {
                     ForEach(columns) { column in
                         Text(column.name).tag(column)
                     }
@@ -27,6 +51,7 @@ struct ChartConfigurationBar: View {
 
                 yColumnMenu
                 seriesPicker
+                sortOrderPicker
 
                 TextField(String(localized: "Chart title"), text: $spec.title)
                     .frame(minWidth: 140, idealWidth: 190, maxWidth: 240)
@@ -55,6 +80,13 @@ struct ChartConfigurationBar: View {
         .help(String(localized: "Choose one or more Y-axis columns"))
     }
 
+    private var xColumnBinding: Binding<ChartColumnID> {
+        Binding(
+            get: { spec.xColumn },
+            set: { spec = ChartConfigurationPolicy.selectX($0, in: spec) }
+        )
+    }
+
     private var seriesPicker: some View {
         Picker(String(localized: "Series"), selection: $spec.seriesColumn) {
             Text(String(localized: "None")).tag(nil as ChartColumnID?)
@@ -62,6 +94,15 @@ struct ChartConfigurationBar: View {
                 Text(column.name).tag(Optional(column))
             }
         }
+    }
+
+    private var sortOrderPicker: some View {
+        Picker(String(localized: "Sort"), selection: $spec.sortOrder) {
+            ForEach(ChartSortOrder.allCases, id: \.self) { order in
+                Text(order.localizedName).tag(order)
+            }
+        }
+        .help(String(localized: "Choose the chart's X-axis sort order"))
     }
 
     private var yColumnSummary: String {

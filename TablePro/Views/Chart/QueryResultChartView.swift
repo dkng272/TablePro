@@ -16,6 +16,25 @@ enum QueryResultChartState: Equatable {
         }
         return .needsConfiguration
     }
+
+    static func reconciledSpec(tableRows: TableRows, storedSpec: ChartSpec?) -> ChartSpec? {
+        guard case .configured(let spec) = resolve(tableRows: tableRows, storedSpec: storedSpec) else {
+            return nil
+        }
+        return spec
+    }
+}
+
+enum QueryResultChartDataState: Equatable {
+    case ready(ChartData)
+    case invalidConfiguration
+
+    static func resolve(tableRows: TableRows, spec: ChartSpec) -> Self {
+        guard let data = try? ChartDataBuilder.build(from: tableRows, spec: spec) else {
+            return .invalidConfiguration
+        }
+        return .ready(data)
+    }
 }
 
 struct QueryResultChartView: View {
@@ -31,9 +50,9 @@ struct QueryResultChartView: View {
                 needsConfigurationView
             case .configured(let resolvedSpec):
                 configuredChart(spec: resolvedSpec)
-                    .task {
-                        if spec != resolvedSpec {
-                            spec = resolvedSpec
+                    .onChange(of: resolvedSpec, initial: true) { _, currentSpec in
+                        if spec != currentSpec {
+                            spec = currentSpec
                         }
                     }
             }
@@ -56,43 +75,65 @@ struct QueryResultChartView: View {
         }
     }
 
+    @ViewBuilder
     private func configuredChart(spec resolvedSpec: ChartSpec) -> some View {
-        let data = try! ChartDataBuilder.build(from: tableRows, spec: resolvedSpec)
         let resolvedSpecBinding = Binding(
-            get: { spec ?? resolvedSpec },
+            get: {
+                QueryResultChartState.reconciledSpec(
+                    tableRows: tableRows,
+                    storedSpec: spec
+                ) ?? resolvedSpec
+            },
             set: { spec = $0 }
         )
 
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             ChartConfigurationBar(tableRows: tableRows, spec: resolvedSpecBinding)
             Divider()
 
-            VStack(alignment: .leading, spacing: 12) {
-                Text(displayTitle(for: resolvedSpec))
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .accessibilityAddTraits(.isHeader)
-
-                Chart(data.points) { point in
-                    mark(for: point, chartType: resolvedSpec.chartType)
-                }
-                .chartLegend(resolvedSpec.showsLegend ? .visible : .hidden)
-                .accessibilityLabel(displayTitle(for: resolvedSpec))
-                .accessibilityValue(
-                    String(
-                        localized: "\(data.points.count) chart points",
-                        comment: "Accessibility summary of the number of rendered chart points"
-                    )
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                chartStatus(data)
+            switch QueryResultChartDataState.resolve(tableRows: tableRows, spec: resolvedSpec) {
+            case .ready(let data):
+                chartCanvas(data: data, spec: resolvedSpec)
+            case .invalidConfiguration:
+                invalidConfigurationView
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
         }
+    }
+
+    private var invalidConfigurationView: some View {
+        ContentUnavailableView {
+            Label(String(localized: "Unable to build chart"), systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(String(localized: "Choose a different X axis or at least one Y-axis column."))
+        }
+    }
+
+    private func chartCanvas(data: ChartData, spec: ChartSpec) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(displayTitle(for: spec))
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .accessibilityAddTraits(.isHeader)
+
+            Chart(data.points) { point in
+                mark(for: point, chartType: spec.chartType)
+            }
+            .chartLegend(spec.showsLegend ? .visible : .hidden)
+            .accessibilityLabel(displayTitle(for: spec))
+            .accessibilityValue(
+                String(
+                    localized: "\(data.points.count) chart points",
+                    comment: "Accessibility summary of the number of rendered chart points"
+                )
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            chartStatus(data)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
     }
 
     @ChartContentBuilder
