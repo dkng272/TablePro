@@ -57,6 +57,15 @@ struct ResultTabBarPolicyTests {
         #expect(ResultTabBarPolicy.canPin(tabType: .query, display: display) == false)
     }
 
+    @Test("An explain result takes precedence over Chart mode")
+    func explainTakesPrecedenceOverChart() {
+        var display = Self.makeDisplay()
+        display.resultsViewMode = .chart
+        display.explainText = "Seq Scan on orders"
+
+        #expect(ResultContentPolicy.showsExplainResult(display: display))
+    }
+
     @Test("A tab with no results has no strip and nothing to pin")
     func emptyResultsHaveNothingToPin() {
         let display = TabDisplayState()

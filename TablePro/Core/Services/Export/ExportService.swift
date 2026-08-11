@@ -274,6 +274,7 @@ final class ExportService {
 
     func exportStreamingQuery(
         query: String,
+        parameterValues: [String?]?,
         config: ExportConfiguration,
         to url: URL
     ) async throws {
@@ -297,6 +298,7 @@ final class ExportService {
 
         let dataSource = StreamingQueryExportDataSource(
             query: query,
+            parameterValues: parameterValues,
             driver: driver,
             databaseType: databaseType
         )

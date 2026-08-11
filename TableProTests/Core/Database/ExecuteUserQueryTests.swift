@@ -115,6 +115,41 @@ struct ExecuteUserQueryTests {
         #expect(result.statusMessage == "warning: cache miss")
         #expect(result.rowsAffected == 0)
     }
+
+    @Test("Streaming query export re-executes parameterized SQL with the original bindings")
+    func streamingExportPreservesParameters() async throws {
+        let pluginDriver = StubPluginDriver(rows: [["bound"]])
+        let adapter = PluginDriverAdapter(
+            connection: TestFixtures.makeConnection(type: .sqlite),
+            pluginDriver: pluginDriver
+        )
+        let dataSource = StreamingQueryExportDataSource(
+            query: "SELECT value FROM records WHERE id = ? AND deleted_at IS ?",
+            parameterValues: ["42", nil],
+            driver: adapter,
+            databaseType: .sqlite
+        )
+
+        var elements: [PluginStreamElement] = []
+        for try await element in dataSource.streamRows(table: "query", databaseName: "") {
+            elements.append(element)
+        }
+
+        #expect(elements.count == 2)
+        if case .header(let header) = elements[0] {
+            #expect(header.columns == ["col1"])
+            #expect(header.columnTypeNames == ["TEXT"])
+        } else {
+            Issue.record("Expected a stream header")
+        }
+        if case .rows(let rows) = elements[1] {
+            #expect(rows == [[.text("bound")]])
+        } else {
+            Issue.record("Expected streamed rows")
+        }
+        #expect(pluginDriver.lastExecutedQuery == "SELECT value FROM records WHERE id = ? AND deleted_at IS ?")
+        #expect(pluginDriver.lastParameters == [.text("42"), .null])
+    }
 }
 
 private final class StubPluginDriver: PluginDatabaseDriver, @unchecked Sendable {

@@ -152,8 +152,9 @@ extension MainContentCoordinator {
     }
 
     func openExportQueryResultsDialog() {
-        guard let tab = tabManager.selectedTab,
-              !tabSessionRegistry.tableRows(for: tab.id).rows.isEmpty else { return }
+        guard let tab = tabManager.selectedTab else { return }
+        let tableRows = tabSessionRegistry.tableRows(for: tab.id)
+        guard QueryResultExportPolicy.canExport(tableRows: tableRows) else { return }
         activeSheet = .exportQueryResults
     }
 

@@ -12,7 +12,18 @@ import TableProPluginKit
 enum ExportMode {
     case tables(connection: DatabaseConnection, preselectedTables: Set<String>)
     case queryResults(connection: DatabaseConnection, tableRows: TableRows, suggestedFileName: String)
-    case streamingQuery(connection: DatabaseConnection, query: String, suggestedFileName: String)
+    case streamingQuery(
+        connection: DatabaseConnection,
+        query: String,
+        parameterValues: [String?]?,
+        suggestedFileName: String
+    )
+}
+
+enum QueryResultExportPolicy {
+    static func canExport(tableRows: TableRows) -> Bool {
+        !tableRows.columns.isEmpty
+    }
 }
 
 // MARK: - Export Configuration

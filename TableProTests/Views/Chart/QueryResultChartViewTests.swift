@@ -176,6 +176,47 @@ struct QueryResultChartViewTests {
         ])
     }
 
+    @Test("Chart controls and empty state are localized")
+    func chartInterfaceIsLocalized() {
+        let translations = [
+            (
+                localizedChartString("Chart Type", locale: "tr"),
+                localizedChartString("No rows to chart", locale: "tr"),
+                localizedChartString("Source Order", locale: "tr"),
+                localizedChartString("Line", locale: "tr"),
+                "Grafik Türü", "Grafiğe dönüştürülecek satır yok", "Kaynak Sırası", "Çizgi"
+            ),
+            (
+                localizedChartString("Chart Type", locale: "vi"),
+                localizedChartString("No rows to chart", locale: "vi"),
+                localizedChartString("Source Order", locale: "vi"),
+                localizedChartString("Line", locale: "vi"),
+                "Loại biểu đồ", "Không có hàng để vẽ biểu đồ", "Thứ tự nguồn", "Đường"
+            ),
+            (
+                localizedChartString("Chart Type", locale: "zh-Hans"),
+                localizedChartString("No rows to chart", locale: "zh-Hans"),
+                localizedChartString("Source Order", locale: "zh-Hans"),
+                localizedChartString("Line", locale: "zh-Hans"),
+                "图表类型", "没有可绘制的行", "源顺序", "折线"
+            ),
+            (
+                localizedChartString("Chart Type", locale: "zh-Hant"),
+                localizedChartString("No rows to chart", locale: "zh-Hant"),
+                localizedChartString("Source Order", locale: "zh-Hant"),
+                localizedChartString("Line", locale: "zh-Hant"),
+                "圖表類型", "沒有可繪製的列", "來源順序", "折線"
+            ),
+        ]
+
+        for translation in translations {
+            #expect(translation.0 == translation.4)
+            #expect(translation.1 == translation.5)
+            #expect(translation.2 == translation.6)
+            #expect(translation.3 == translation.7)
+        }
+    }
+
     @Test("Invalid chart data selects a recoverable configuration state")
     func invalidChartData() {
         let rows = Self.compatibleRows()
@@ -200,4 +241,12 @@ struct QueryResultChartViewTests {
             columnTypes: [.text(rawType: nil), .decimal(rawType: nil)]
         )
     }
+}
+
+private func localizedChartString(_ key: String, locale: String) -> String {
+    guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"),
+          let bundle = Bundle(path: path) else {
+        return key
+    }
+    return bundle.localizedString(forKey: key, value: nil, table: nil)
 }

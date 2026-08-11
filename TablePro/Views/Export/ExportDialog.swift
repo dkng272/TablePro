@@ -43,7 +43,7 @@ struct ExportDialog: View {
         switch mode {
         case .tables(let conn, _): return conn
         case .queryResults(let conn, _, _): return conn
-        case .streamingQuery(let conn, _, _): return conn
+        case .streamingQuery(let conn, _, _, _): return conn
         }
     }
 
@@ -59,6 +59,17 @@ struct ExportDialog: View {
             return tableRows.count
         }
         return 0
+    }
+
+    private var queryResultsCanExport: Bool {
+        switch mode {
+        case .queryResults(_, let tableRows, _):
+            return QueryResultExportPolicy.canExport(tableRows: tableRows)
+        case .streamingQuery:
+            return true
+        default:
+            return false
+        }
     }
 
     private var preselectedTables: Set<String> {
@@ -120,7 +131,7 @@ struct ExportDialog: View {
                 switch mode {
                 case .queryResults(_, _, let suggestedFileName):
                     config.fileName = suggestedFileName
-                case .streamingQuery(_, _, let suggestedFileName):
+                case .streamingQuery(_, _, _, let suggestedFileName):
                     config.fileName = suggestedFileName
                 default:
                     break
@@ -454,11 +465,8 @@ struct ExportDialog: View {
         if isExporting || !isFileNameValid || availableFormats.isEmpty {
             return true
         }
-        if case .streamingQuery = mode {
-            return false
-        }
         if isQueryResultsMode {
-            return queryResultsRowCount == 0
+            return !queryResultsCanExport
         }
         return exportableCount == 0
     }
@@ -864,10 +872,20 @@ struct ExportDialog: View {
     }
 
     @MainActor
-    private func runStreamingExport(on driver: DatabaseDriver, query: String, to url: URL) async throws {
+    private func runStreamingExport(
+        on driver: DatabaseDriver,
+        query: String,
+        parameterValues: [String?]?,
+        to url: URL
+    ) async throws {
         let service = ExportService(driver: driver, databaseType: connection.type)
         exportService = service
-        try await service.exportStreamingQuery(query: query, config: config, to: url)
+        try await service.exportStreamingQuery(
+            query: query,
+            parameterValues: parameterValues,
+            config: config,
+            to: url
+        )
     }
 
     @MainActor
@@ -878,7 +896,7 @@ struct ExportDialog: View {
 
         do {
             switch mode {
-            case .streamingQuery(_, let query, _):
+            case .streamingQuery(_, let query, let parameterValues, _):
                 guard let scope = exportScope else { throw ExportError.notConnected }
                 let route = DatabaseManager.shared.executionRoute(for: scope)
                 try await DatabaseManager.shared.withScopedDriver(
@@ -887,7 +905,12 @@ struct ExportDialog: View {
                     workload: .bulk,
                     cancellation: .untracked
                 ) { driver in
-                    try await runStreamingExport(on: driver, query: query, to: url)
+                    try await runStreamingExport(
+                        on: driver,
+                        query: query,
+                        parameterValues: parameterValues,
+                        to: url
+                    )
                 }
             case .queryResults(_, let tableRows, _):
                 let service = ExportService(databaseType: connection.type)

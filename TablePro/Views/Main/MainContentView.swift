@@ -210,6 +210,7 @@ struct MainContentView: View {
                         mode: .streamingQuery(
                             connection: connectionWithCurrentDatabase,
                             query: baseQuery,
+                            parameterValues: tab.pagination.baseQueryParameterValues,
                             suggestedFileName: fileName
                         )
                     )

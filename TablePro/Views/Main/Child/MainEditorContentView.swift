@@ -564,12 +564,23 @@ struct MainEditorContentView: View {
                 )
                 .id(tab.id)
             case .chart:
-                resultTabBarSection(tab: tab)
-                QueryResultChartView(
-                    tableRows: resolvedTableRows(for: tab),
-                    spec: chartSpecBinding(for: tab)
-                )
-                .id(tab.display.activeResultSetId)
+                if ResultContentPolicy.showsExplainResult(display: tab.display),
+                   let explainText = tab.display.explainText
+                {
+                    ExplainResultView(
+                        text: explainText,
+                        executionTime: tab.display.explainExecutionTime,
+                        plan: tab.display.explainPlan
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    resultTabBarSection(tab: tab)
+                    QueryResultChartView(
+                        tableRows: resolvedTableRows(for: tab),
+                        spec: chartSpecBinding(for: tab)
+                    )
+                    .id(tab.display.activeResultSetId)
+                }
             case .data:
                 if let explainText = tab.display.explainText {
                     ExplainResultView(text: explainText, executionTime: tab.display.explainExecutionTime, plan: tab.display.explainPlan)

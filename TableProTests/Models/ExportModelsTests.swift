@@ -13,6 +13,43 @@ import Testing
 @Suite("Export Models")
 struct ExportModelsTests {
 
+    @Test("Streaming query export mode preserves bound parameter values")
+    func streamingQueryPreservesParameters() {
+        let mode = ExportMode.streamingQuery(
+            connection: TestFixtures.makeConnection(),
+            query: "SELECT * FROM users WHERE id = ? AND deleted_at IS ?",
+            parameterValues: ["42", nil],
+            suggestedFileName: "query_results"
+        )
+
+        guard case .streamingQuery(_, let query, let parameterValues, let fileName) = mode else {
+            Issue.record("Expected streaming query export mode")
+            return
+        }
+
+        #expect(query == "SELECT * FROM users WHERE id = ? AND deleted_at IS ?")
+        #expect(parameterValues?.count == 2)
+        #expect(parameterValues?[0] == "42")
+        #expect(parameterValues?[1] == nil)
+        #expect(fileName == "query_results")
+    }
+
+    @Test("Header-only query results remain exportable")
+    func headerOnlyQueryResultsCanExport() {
+        let tableRows = TableRows.from(
+            queryRows: [],
+            columns: ["id"],
+            columnTypes: [.integer(rawType: "INTEGER")]
+        )
+
+        #expect(QueryResultExportPolicy.canExport(tableRows: tableRows))
+    }
+
+    @Test("Query results without columns cannot be exported")
+    func columnlessQueryResultsCannotExport() {
+        #expect(!QueryResultExportPolicy.canExport(tableRows: TableRows()))
+    }
+
     @MainActor @Test("Export configuration default format is csv")
     func exportConfigurationDefaultFormat() {
         let config = ExportConfiguration()

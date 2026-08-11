@@ -8,6 +8,13 @@
 
 import Foundation
 
+enum ResultContentPolicy {
+    static func showsExplainResult(display: TabDisplayState) -> Bool {
+        guard display.explainText != nil else { return false }
+        return display.resultsViewMode == .data || display.resultsViewMode == .chart
+    }
+}
+
 enum ResultTabBarPolicy {
     static func showsTabBar(tabType: TabType, display: TabDisplayState) -> Bool {
         guard tabType == .query else { return false }
