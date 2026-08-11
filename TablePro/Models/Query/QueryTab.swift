@@ -5,6 +5,7 @@ import TableProPluginKit
 
 enum ResultsViewMode: String, Equatable {
     case data
+    case chart
     case structure
     case json
 }

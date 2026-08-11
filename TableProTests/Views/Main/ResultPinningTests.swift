@@ -22,6 +22,45 @@ struct ResultPinningTests {
         #expect(display.activeResultSetId == fresh.id)
     }
 
+    @Test("Pinned results retain independent chart specifications")
+    @MainActor
+    func pinnedResultsRetainIndependentChartSpecs() {
+        let first = Self.makeResultSet(label: "first", isPinned: true)
+        let second = Self.makeResultSet(label: "second", isPinned: true)
+        first.chartSpec = ChartSpec(
+            chartType: .line,
+            xColumn: .init(ordinal: 0, name: "x"),
+            yColumns: [.init(ordinal: 1, name: "y")]
+        )
+        second.chartSpec = ChartSpec(
+            chartType: .bar,
+            xColumn: .init(ordinal: 0, name: "x"),
+            yColumns: [.init(ordinal: 2, name: "z")]
+        )
+
+        #expect(first.chartSpec?.chartType == .line)
+        #expect(second.chartSpec?.chartType == .bar)
+    }
+
+    @Test("Replacing an unpinned result starts without a chart specification")
+    @MainActor
+    func replacementStartsWithoutChartSpec() {
+        var display = TabDisplayState()
+        let scratch = Self.makeResultSet(label: "scratch")
+        scratch.chartSpec = ChartSpec(
+            chartType: .line,
+            xColumn: .init(ordinal: 0, name: "x"),
+            yColumns: [.init(ordinal: 1, name: "y")]
+        )
+        display.resultSets = [scratch]
+
+        let fresh = Self.makeResultSet(label: "fresh")
+        display.replaceUnpinnedResults(with: [fresh])
+
+        #expect(display.resultSets.map(\.id) == [fresh.id])
+        #expect(fresh.chartSpec == nil)
+    }
+
     @Test("A new execution never targets a pinned result when every result is pinned")
     @MainActor
     func replaceWhenAllResultsArePinned() {
@@ -225,7 +264,7 @@ struct ResultPinningTests {
         let index = try #require(coordinator.tabManager.selectedTabIndex)
         let result = Self.makeResultSet(label: "Result")
 
-        for mode in [ResultsViewMode.data, .json, .structure] {
+        for mode in [ResultsViewMode.data, .chart, .json, .structure] {
             for explainText in [nil, "plan"] as [String?] {
                 coordinator.tabManager.mutate(at: index) { tab in
                     tab.display.resultSets = [result]

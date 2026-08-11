@@ -563,7 +563,7 @@ struct MainEditorContentView: View {
                     columnLayout: tab.columnLayout
                 )
                 .id(tab.id)
-            case .data:
+            case .data, .chart:
                 if let explainText = tab.display.explainText {
                     ExplainResultView(text: explainText, executionTime: tab.display.explainExecutionTime, plan: tab.display.explainPlan)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)

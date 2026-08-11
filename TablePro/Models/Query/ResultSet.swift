@@ -29,6 +29,7 @@ final class ResultSet: Identifiable {
     var sortState = SortState()
     var pagination = PaginationState()
     var columnLayout = ColumnLayoutState()
+    var chartSpec: ChartSpec?
 
     var resultColumns: [String] { tableRows.columns }
 
