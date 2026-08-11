@@ -29,7 +29,7 @@ enum ChartSpecInferrer {
     }
 
     private static func kind(at ordinal: Int, in tableRows: TableRows) -> Kind {
-        guard ordinal >= tableRows.columnTypes.count else {
+        guard ordinal < tableRows.columnTypes.count else {
             return sampledKind(at: ordinal, in: tableRows)
         }
 
