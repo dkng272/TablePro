@@ -121,6 +121,46 @@ struct ChartDataBuilderTests {
         #expect(first.isSampled)
     }
 
+    @Test("Caller limit cannot exceed the chart point cap")
+    func callerLimitIsClampedToDefaultCap() throws {
+        let values: [[String?]] = (0..<5_001).map { [String($0), String($0 * 2)] }
+        let rows = Self.rows(
+            values: values,
+            columns: ["x", "y"],
+            types: [.integer(rawType: nil), .integer(rawType: nil)]
+        )
+        let spec = ChartSpec(
+            chartType: .scatter,
+            xColumn: .init(ordinal: 0, name: "x"),
+            yColumns: [.init(ordinal: 1, name: "y")]
+        )
+
+        let data = try ChartDataBuilder.build(from: rows, spec: spec, limit: 10_000)
+
+        #expect(data.points.count == 5_000)
+        #expect(data.isSampled)
+    }
+
+    @Test("One-point sampling retains the first point")
+    func onePointSamplingRetainsFirstPoint() throws {
+        let rows = Self.rows(
+            values: [["0", "0"], ["1", "2"]],
+            columns: ["x", "y"],
+            types: [.integer(rawType: nil), .integer(rawType: nil)]
+        )
+        let spec = ChartSpec(
+            chartType: .scatter,
+            xColumn: .init(ordinal: 0, name: "x"),
+            yColumns: [.init(ordinal: 1, name: "y")]
+        )
+
+        let data = try ChartDataBuilder.build(from: rows, spec: spec, limit: 1)
+
+        #expect(data.points.count == 1)
+        #expect(data.points.first?.x == .number(0))
+        #expect(data.isSampled)
+    }
+
     private static func rows(
         values: [[String?]], columns: [String], types: [ColumnType]
     ) -> TableRows {

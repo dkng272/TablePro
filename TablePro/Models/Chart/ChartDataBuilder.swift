@@ -14,7 +14,7 @@ enum ChartDataBuilder {
         }
         let built = buildAllPoints(from: tableRows, spec: validSpec)
         let sorted = sort(built.points, order: validSpec.sortOrder)
-        let sampled = sample(sorted, limit: limit)
+        let sampled = sample(sorted, limit: min(limit, defaultPointLimit))
         return ChartData(
             points: sampled,
             skippedValueCount: built.skipped,
@@ -134,6 +134,9 @@ enum ChartDataBuilder {
 
     private static func sample(_ points: [ChartPoint], limit: Int) -> [ChartPoint] {
         guard limit > 0, points.count > limit else { return limit > 0 ? points : [] }
+        if limit == 1 {
+            return [points[0]]
+        }
         return (0..<limit).map { index in
             let sampledIndex = Int(round(Double(index) * Double(points.count - 1) / Double(limit - 1)))
             return points[sampledIndex]
