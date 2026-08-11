@@ -129,6 +129,58 @@ struct ChartDataBuilderTests {
         })
     }
 
+    @Test("Inferred space-separated SQL datetime X stays temporal and sorts without metadata")
+    func inferredSpaceSeparatedSQLDatetimeStaysTemporal() throws {
+        let rows = Self.rows(
+            values: [
+                ["2026-01-01 12:30:00", "20"],
+                ["2026-01-01 08:15:00", "10"],
+            ],
+            columns: ["created_at", "revenue"],
+            types: []
+        )
+        var spec = try #require(ChartSpecInferrer.infer(from: rows))
+        spec.sortOrder = .ascendingX
+
+        let data = try ChartDataBuilder.build(from: rows, spec: spec)
+
+        #expect(spec.chartType == .line)
+        #expect(data.points.map(\.sourceRow) == [1, 0])
+        #expect(data.points.allSatisfy {
+            if case .date = $0.x {
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    @Test("Inferred T-separated SQL datetime X stays temporal and sorts with short metadata")
+    func inferredTSeparatedSQLDatetimeStaysTemporal() throws {
+        let rows = Self.rows(
+            values: [
+                ["true", "2026-01-01T12:30:00", "20"],
+                ["false", "2026-01-01T08:15:00", "10"],
+            ],
+            columns: ["active", "created_at", "revenue"],
+            types: [.boolean(rawType: nil)]
+        )
+        var spec = try #require(ChartSpecInferrer.infer(from: rows))
+        spec.sortOrder = .ascendingX
+
+        let data = try ChartDataBuilder.build(from: rows, spec: spec)
+
+        #expect(spec.chartType == .line)
+        #expect(data.points.map(\.sourceRow) == [1, 0])
+        #expect(data.points.allSatisfy {
+            if case .date = $0.x {
+                true
+            } else {
+                false
+            }
+        })
+    }
+
     @Test("Non-finite numeric X and Y values are skipped")
     func nonFiniteNumericValuesAreSkipped() throws {
         let rows = Self.rows(
@@ -220,6 +272,26 @@ struct ChartDataBuilderTests {
 
         let data = try ChartDataBuilder.build(from: rows, spec: spec)
         #expect(data.points.map(\.seriesLabel) == ["North", "South"])
+    }
+
+    @Test("Null and literal NULL groups have colliding labels but distinct identities")
+    func nullAndLiteralNULLGroupsRemainDistinct() throws {
+        let rows = Self.rows(
+            values: [["Q1", "10", nil], ["Q2", "12", "NULL"]],
+            columns: ["quarter", "revenue", "region"],
+            types: [.text(rawType: nil), .decimal(rawType: nil), .text(rawType: nil)]
+        )
+        let spec = ChartSpec(
+            chartType: .line,
+            xColumn: .init(ordinal: 0, name: "quarter"),
+            yColumns: [.init(ordinal: 1, name: "revenue")],
+            seriesColumn: .init(ordinal: 2, name: "region")
+        )
+
+        let data = try ChartDataBuilder.build(from: rows, spec: spec)
+
+        #expect(data.points.map(\.seriesLabel) == ["NULL", "NULL"])
+        #expect(Set(data.points.map(\.seriesID)).count == 2)
     }
 
     @Test("Explicit groups and multiple Y columns use composite series identity")

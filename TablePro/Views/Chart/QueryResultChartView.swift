@@ -113,6 +113,22 @@ enum ChartPointAccessibilityFormatter {
     }
 }
 
+// MARK: - ChartRenderSeries
+
+struct ChartRenderSeries: Equatable {
+    // MARK: Lifecycle
+
+    init(point: ChartPoint) {
+        self.groupingID = point.seriesID
+        self.styleLabel = point.seriesLabel
+    }
+
+    // MARK: Internal
+
+    let groupingID: String
+    let styleLabel: String
+}
+
 // MARK: - QueryResultChartDataCache
 
 private struct QueryResultChartDataCache: Equatable, Sendable {
@@ -339,31 +355,40 @@ struct QueryResultChartView: View {
     )
         -> some ChartContent
     {
+        let renderSeries = ChartRenderSeries(point: point)
         switch chartType {
         case .line:
-            LineMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.seriesLabel))
-                .accessibilityLabel(
-                    ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
-                )
-                .accessibilityValue(point.y.formatted())
+            LineMark(
+                x: .value("X", x),
+                y: .value("Y", point.y),
+                series: .value("Series ID", renderSeries.groupingID)
+            )
+            .foregroundStyle(by: .value("Series", renderSeries.styleLabel))
+            .accessibilityLabel(
+                ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
+            )
+            .accessibilityValue(point.y.formatted())
         case .bar:
             BarMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.seriesLabel))
+                .foregroundStyle(by: .value("Series", renderSeries.styleLabel))
                 .accessibilityLabel(
                     ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
                 )
                 .accessibilityValue(point.y.formatted())
         case .area:
-            AreaMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.seriesLabel))
-                .accessibilityLabel(
-                    ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
-                )
-                .accessibilityValue(point.y.formatted())
+            AreaMark(
+                x: .value("X", x),
+                y: .value("Y", point.y),
+                series: .value("Series ID", renderSeries.groupingID)
+            )
+            .foregroundStyle(by: .value("Series", renderSeries.styleLabel))
+            .accessibilityLabel(
+                ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
+            )
+            .accessibilityValue(point.y.formatted())
         case .scatter:
             PointMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.seriesLabel))
+                .foregroundStyle(by: .value("Series", renderSeries.styleLabel))
                 .accessibilityLabel(
                     ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
                 )
