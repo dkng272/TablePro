@@ -45,7 +45,7 @@ struct QueryResultChartReconciliation: Equatable {
 
 // MARK: - QueryResultChartDataState
 
-enum QueryResultChartDataState: Equatable {
+enum QueryResultChartDataState: Equatable, Sendable {
     case ready(ChartData)
     case invalidConfiguration
 
@@ -59,14 +59,88 @@ enum QueryResultChartDataState: Equatable {
     }
 }
 
+// MARK: - QueryResultChartDataKey
+
+struct QueryResultChartDataKey: Equatable, Sendable {
+    // MARK: Lifecycle
+
+    init(dataRevision: Int, spec: ChartSpec) {
+        self.dataRevision = dataRevision
+        self.xColumn = spec.xColumn
+        self.yColumns = spec.yColumns
+        self.seriesColumn = spec.seriesColumn
+        self.sortOrder = spec.sortOrder
+    }
+
+    // MARK: Internal
+
+    let dataRevision: Int
+    let xColumn: ChartColumnID
+    let yColumns: [ChartColumnID]
+    let seriesColumn: ChartColumnID?
+    let sortOrder: ChartSortOrder
+}
+
+// MARK: - ChartPointAccessibilityFormatter
+
+enum ChartPointAccessibilityFormatter {
+    // MARK: Internal
+
+    static func label(for point: ChartPoint, xColumnName: String) -> String {
+        let xCoordinate = String(
+            format: String(localized: "%@: %@"),
+            xColumnName,
+            description(for: point.x)
+        )
+        return String(
+            format: String(localized: "%@, %@"),
+            point.seriesLabel,
+            xCoordinate
+        )
+    }
+
+    // MARK: Private
+
+    private static func description(for value: ChartXValue) -> String {
+        switch value {
+        case let .category(value):
+            value
+        case let .number(value):
+            value.formatted()
+        case let .date(value):
+            value.formatted(date: .abbreviated, time: .shortened)
+        }
+    }
+}
+
+// MARK: - QueryResultChartDataCache
+
+private struct QueryResultChartDataCache: Equatable, Sendable {
+    let key: QueryResultChartDataKey
+    let state: QueryResultChartDataState
+}
+
 // MARK: - QueryResultChartView
 
 struct QueryResultChartView: View {
+    // MARK: Lifecycle
+
+    init(
+        tableRows: TableRows,
+        spec: Binding<ChartSpec?>,
+        dataRevision: Int = 0
+    ) {
+        self.tableRows = tableRows
+        self.dataRevision = dataRevision
+        self._spec = spec
+    }
+
     // MARK: Internal
 
-    let tableRows: TableRows
-
     @Binding var spec: ChartSpec?
+
+    let tableRows: TableRows
+    let dataRevision: Int
 
     var body: some View {
         VStack(spacing: 0) {
@@ -91,6 +165,8 @@ struct QueryResultChartView: View {
     }
 
     // MARK: Private
+
+    @State private var cachedData: QueryResultChartDataCache?
 
     private var noRowsView: some View {
         ContentUnavailableView {
@@ -132,12 +208,29 @@ struct QueryResultChartView: View {
             ChartConfigurationBar(tableRows: tableRows, spec: resolvedSpecBinding)
             Divider()
 
-            switch QueryResultChartDataState.resolve(tableRows: tableRows, spec: resolvedSpec) {
-            case let .ready(data):
-                chartCanvas(data: data, spec: resolvedSpec)
-            case .invalidConfiguration:
-                invalidConfigurationView
+            chartDataContent(
+                spec: resolvedSpec,
+                key: QueryResultChartDataKey(dataRevision: dataRevision, spec: resolvedSpec)
+            )
+        }
+    }
+
+    private func chartDataContent(spec: ChartSpec, key: QueryResultChartDataKey) -> some View {
+        Group {
+            if let cachedData, cachedData.key == key {
+                switch cachedData.state {
+                case let .ready(data):
+                    chartCanvas(data: data, spec: spec)
+                case .invalidConfiguration:
+                    invalidConfigurationView
+                }
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .task(id: key) {
+            await rebuildChartData(spec: spec, key: key)
         }
     }
 
@@ -150,7 +243,11 @@ struct QueryResultChartView: View {
                 .accessibilityAddTraits(.isHeader)
 
             Chart(data.points) { point in
-                mark(for: point, chartType: spec.chartType)
+                mark(
+                    for: point,
+                    chartType: spec.chartType,
+                    xColumnName: spec.xColumn.name
+                )
             }
             .chartLegend(spec.showsLegend ? .visible : .hidden)
             .accessibilityLabel(displayTitle(for: spec))
@@ -204,15 +301,32 @@ struct QueryResultChartView: View {
         }
     }
 
+    private func rebuildChartData(spec: ChartSpec, key: QueryResultChartDataKey) async {
+        let tableRows = tableRows
+        let state = await Task.detached(priority: .userInitiated) {
+            QueryResultChartDataState.resolve(tableRows: tableRows, spec: spec)
+        }.value
+        guard !Task.isCancelled else {
+            return
+        }
+        cachedData = QueryResultChartDataCache(key: key, state: state)
+    }
+
     @ChartContentBuilder
-    private func mark(for point: ChartPoint, chartType: ChartType) -> some ChartContent {
+    private func mark(
+        for point: ChartPoint,
+        chartType: ChartType,
+        xColumnName: String
+    )
+        -> some ChartContent
+    {
         switch point.x {
         case let .category(value):
-            typedMark(for: point, x: value, chartType: chartType)
+            typedMark(for: point, x: value, chartType: chartType, xColumnName: xColumnName)
         case let .number(value):
-            typedMark(for: point, x: value, chartType: chartType)
+            typedMark(for: point, x: value, chartType: chartType, xColumnName: xColumnName)
         case let .date(value):
-            typedMark(for: point, x: value, chartType: chartType)
+            typedMark(for: point, x: value, chartType: chartType, xColumnName: xColumnName)
         }
     }
 
@@ -220,30 +334,39 @@ struct QueryResultChartView: View {
     private func typedMark<X: Plottable>(
         for point: ChartPoint,
         x: X,
-        chartType: ChartType
+        chartType: ChartType,
+        xColumnName: String
     )
         -> some ChartContent
     {
         switch chartType {
         case .line:
             LineMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.series))
-                .accessibilityLabel(point.series)
+                .foregroundStyle(by: .value("Series", point.seriesLabel))
+                .accessibilityLabel(
+                    ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
+                )
                 .accessibilityValue(point.y.formatted())
         case .bar:
             BarMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.series))
-                .accessibilityLabel(point.series)
+                .foregroundStyle(by: .value("Series", point.seriesLabel))
+                .accessibilityLabel(
+                    ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
+                )
                 .accessibilityValue(point.y.formatted())
         case .area:
             AreaMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.series))
-                .accessibilityLabel(point.series)
+                .foregroundStyle(by: .value("Series", point.seriesLabel))
+                .accessibilityLabel(
+                    ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
+                )
                 .accessibilityValue(point.y.formatted())
         case .scatter:
             PointMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.series))
-                .accessibilityLabel(point.series)
+                .foregroundStyle(by: .value("Series", point.seriesLabel))
+                .accessibilityLabel(
+                    ChartPointAccessibilityFormatter.label(for: point, xColumnName: xColumnName)
+                )
                 .accessibilityValue(point.y.formatted())
         }
     }

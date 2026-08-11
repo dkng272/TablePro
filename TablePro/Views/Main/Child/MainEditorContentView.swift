@@ -528,7 +528,8 @@ struct MainEditorContentView: View {
                     resultTabBarSection(tab: tab)
                     QueryResultChartView(
                         tableRows: resolvedTableRows(for: tab),
-                        spec: chartSpecBinding(for: tab)
+                        spec: chartSpecBinding(for: tab),
+                        dataRevision: coordinator.tabSessionRegistry.session(for: tab.id)?.dataRevision ?? 0
                     )
                     .id(tab.display.activeResultSetId)
                 }

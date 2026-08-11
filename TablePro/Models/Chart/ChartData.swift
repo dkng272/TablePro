@@ -15,7 +15,8 @@ struct ChartPoint: Identifiable, Equatable, Sendable {
     let sourceRow: Int
     let x: ChartXValue
     let y: Double
-    let series: String
+    let seriesID: String
+    let seriesLabel: String
 }
 
 // MARK: - ChartData
