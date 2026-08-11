@@ -179,6 +179,21 @@ struct MainMenuValidationTests {
         #expect(!enabled(#selector(MainSplitViewController.createNewTable(_:)), context))
     }
 
+    @Test("Selection-dependent row commands require a row selection")
+    func rowCommandsNeedRowSelection() {
+        var context = MenuValidationContext()
+        context.isConnected = true
+        context.isCurrentTabEditable = true
+
+        #expect(!enabled(#selector(MainSplitViewController.duplicateRow(_:)), context))
+        #expect(!enabled(#selector(MainSplitViewController.delete(_:)), context))
+
+        context.hasRowSelection = true
+
+        #expect(enabled(#selector(MainSplitViewController.duplicateRow(_:)), context))
+        #expect(enabled(#selector(MainSplitViewController.delete(_:)), context))
+    }
+
     @Test("Cancel Query tracks execution, not connection")
     func cancelTracksExecution() {
         var context = MenuValidationContext()
@@ -232,6 +247,7 @@ struct MainMenuValidationTests {
         context.supportsServerDashboard = true
         context.supportsUserManagement = true
         context.isCurrentTabEditable = true
+        context.hasRowSelection = true
         context.hasTableSelection = true
         context.canShowTableStructure = true
         context.canEditViewDefinition = true

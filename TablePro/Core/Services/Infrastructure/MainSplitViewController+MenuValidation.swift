@@ -113,8 +113,11 @@ extension MainSplitViewController: NSMenuItemValidation {
         case #selector(saveAsFavorite(_:)):
             return context.canSaveAsFavorite
 
-        case #selector(addRow(_:)), #selector(duplicateRow(_:)):
+        case #selector(addRow(_:)):
             return context.isConnected && context.isCurrentTabEditable && !context.isReadOnly
+        case #selector(duplicateRow(_:)):
+            return context.isConnected && context.isCurrentTabEditable && context.hasRowSelection
+                && !context.isReadOnly
         case #selector(truncateTable(_:)):
             return context.isConnected && context.hasTableSelection && !context.isReadOnly
         case #selector(performFind(_:)):
@@ -132,7 +135,8 @@ extension MainSplitViewController: NSMenuItemValidation {
              #selector(copyRowsAsJson(_:)):
             return context.hasRowSelection
         case #selector(delete(_:)):
-            return context.isConnected && (context.isCurrentTabEditable || context.hasTableSelection)
+            return context.isConnected
+                && ((context.isCurrentTabEditable && context.hasRowSelection) || context.hasTableSelection)
 
         case #selector(createNewTable(_:)), #selector(createNewView(_:)):
             return context.isConnected && !context.isReadOnly

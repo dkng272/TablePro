@@ -271,6 +271,16 @@ struct CommandActionsDispatchTests {
         return (delegate, tableViewCoordinator)
     }
 
+    private func configureEditableChartTable(_ coordinator: MainContentCoordinator) {
+        var tab = QueryTab(title: "users", query: "SELECT * FROM users", tabType: .table, tableName: "users")
+        tab.tableContext.isEditable = true
+        tab.display.resultsViewMode = .chart
+        coordinator.tabManager.tabs.append(tab)
+        coordinator.tabManager.selectedTabId = tab.id
+        seedRows(coordinator)
+        coordinator.selectionState.indices = [0]
+    }
+
     @Test("copySelectedRowsAsJson honors the grid range selection")
     func copySelectedRowsAsJson_usesRangeSelection() {
         let clipboard = CommandActionsClipboard()
@@ -315,5 +325,53 @@ struct CommandActionsDispatchTests {
 
         #expect(actions.hasRowSelection)
         withExtendedLifetime(attached) {}
+    }
+
+    @Test("Chart mode ignores the hidden grid selection for shortcuts and menus")
+    func chartModeHasNoRowSelectionOrEditability() {
+        let (actions, coordinator) = makeSUT()
+        configureEditableChartTable(coordinator)
+        let attached = attachGridWithRangeSelection(to: coordinator)
+
+        #expect(!actions.hasRowSelection)
+        #expect(!actions.isCurrentTabEditable)
+        withExtendedLifetime(attached) {}
+    }
+
+    @Test("Chart mode row mutation commands leave hidden data unchanged")
+    func chartModeBlocksRowMutations() throws {
+        let clipboard = CommandActionsClipboard()
+        clipboard.text = "3\tCarol"
+        ClipboardService.shared = clipboard
+        defer { ClipboardService.shared = NSPasteboardClipboardProvider() }
+
+        let (actions, coordinator) = makeSUT()
+        configureEditableChartTable(coordinator)
+        let tabId = try #require(coordinator.tabManager.selectedTabId)
+
+        actions.addNewRow()
+        actions.duplicateRow()
+        actions.deleteSelectedRows()
+        actions.pasteRows()
+
+        #expect(coordinator.tabSessionRegistry.tableRows(for: tabId).count == 2)
+        #expect(!coordinator.changeManager.hasChanges)
+    }
+
+    @Test("Chart mode copy shortcuts do not read stale hidden rows")
+    func chartModeBlocksRowCopies() {
+        let clipboard = CommandActionsClipboard()
+        clipboard.text = "unchanged"
+        ClipboardService.shared = clipboard
+        defer { ClipboardService.shared = NSPasteboardClipboardProvider() }
+
+        let (actions, coordinator) = makeSUT()
+        configureEditableChartTable(coordinator)
+
+        actions.copySelectedRows()
+        actions.copySelectedRowsWithHeaders()
+        actions.copySelectedRowsAsJson()
+
+        #expect(clipboard.text == "unchanged")
     }
 }

@@ -10,6 +10,7 @@ struct ResultPinningTests {
     @MainActor
     func replaceKeepsPinnedResults() {
         var display = TabDisplayState()
+        display.resultsViewMode = .chart
         let pinned = Self.makeResultSet(label: "kept", isPinned: true)
         let scratch = Self.makeResultSet(label: "scratch")
         display.resultSets = [pinned, scratch]
@@ -20,11 +21,13 @@ struct ResultPinningTests {
 
         #expect(display.resultSets.map(\.id) == [pinned.id, fresh.id])
         #expect(display.activeResultSetId == fresh.id)
+        #expect(display.resultsViewMode == .data)
     }
 
     @Test("Pinned results retain independent chart specifications")
     @MainActor
     func pinnedResultsRetainIndependentChartSpecs() {
+        var display = TabDisplayState()
         let first = Self.makeResultSet(label: "first", isPinned: true)
         let second = Self.makeResultSet(label: "second", isPinned: true)
         first.chartSpec = ChartSpec(
@@ -37,9 +40,15 @@ struct ResultPinningTests {
             xColumn: .init(ordinal: 0, name: "x"),
             yColumns: [.init(ordinal: 2, name: "z")]
         )
+        display.resultSets = [first, second]
+        display.activeResultSetId = first.id
+        display.resultsViewMode = .chart
+
+        display.activeResultSetId = second.id
 
         #expect(first.chartSpec?.chartType == .line)
         #expect(second.chartSpec?.chartType == .bar)
+        #expect(display.resultsViewMode == .chart)
     }
 
     @Test("Replacing an unpinned result starts without a chart specification")
@@ -83,6 +92,7 @@ struct ResultPinningTests {
     @MainActor
     func replaceWithMultipleStatementResults() {
         var display = TabDisplayState()
+        display.resultsViewMode = .chart
         let pinned = Self.makeResultSet(label: "kept", isPinned: true)
         display.resultSets = [pinned, Self.makeResultSet(label: "scratch")]
 
@@ -92,6 +102,7 @@ struct ResultPinningTests {
 
         #expect(display.resultSets.map(\.id) == [pinned.id, first.id, second.id])
         #expect(display.activeResultSetId == second.id)
+        #expect(display.resultsViewMode == .data)
     }
 
     @Test("Removing unpinned results keeps the pinned ones and reactivates the last")

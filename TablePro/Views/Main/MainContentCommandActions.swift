@@ -193,22 +193,34 @@ final class MainContentCommandActions {
         // calls RowEditingCoordinator.addNewRow (data-only).
         if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
             coordinator?.structureActions?.addRow?()
-        } else {
-            coordinator?.addNewRow()
+            return
         }
+        guard dataGridOwnsSelection else { return }
+        coordinator?.addNewRow()
     }
 
     private func resolvedRowSelection() -> Set<Int> {
-        coordinator?.dataTabDelegate?.tableViewCoordinator?.currentRowSelection() ?? selectionState.indices
+        switch rowSelectionOwner {
+        case .dataGrid:
+            return coordinator?.dataTabDelegate?.tableViewCoordinator?.currentRowSelection() ?? selectionState.indices
+        case .schemaGrid:
+            return selectionState.indices
+        case .none:
+            return []
+        }
     }
 
     /// `selectionState` is shared with the structure and new-table grids, so a row command
     /// has to confirm the data grid owns the selection before it acts on data rows.
-    private var dataGridOwnsSelection: Bool {
+    private var rowSelectionOwner: GridSelectionOwner {
         GridSelectionOwner.resolve(
             tabType: coordinator?.tabManager.selectedTab?.tabType,
             resultsViewMode: coordinator?.tabManager.selectedTab?.display.resultsViewMode
-        ) == .dataGrid
+        )
+    }
+
+    private var dataGridOwnsSelection: Bool {
+        rowSelectionOwner == .dataGrid
     }
 
     func deleteSelectedRows(rowIndices: Set<Int>? = nil) {
@@ -219,7 +231,7 @@ final class MainContentCommandActions {
             return
         }
 
-        let indices = rowIndices ?? resolvedRowSelection()
+        let indices = dataGridOwnsSelection ? rowIndices ?? resolvedRowSelection() : []
         if !indices.isEmpty {
             coordinator?.deleteSelectedRows(indices: indices)
         } else if !fromDataGrid, !selectedTables.wrappedValue.isEmpty {
@@ -252,9 +264,10 @@ final class MainContentCommandActions {
     func copySelectedRows() {
         if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
             coordinator?.structureActions?.copyRows?()
-        } else {
-            coordinator?.copySelectedRowsToClipboard(indices: resolvedRowSelection())
+            return
         }
+        guard dataGridOwnsSelection else { return }
+        coordinator?.copySelectedRowsToClipboard(indices: resolvedRowSelection())
     }
 
     func copySelectedRowsWithHeaders() {
@@ -263,15 +276,17 @@ final class MainContentCommandActions {
     }
 
     func copySelectedRowsAsJson() {
+        guard dataGridOwnsSelection else { return }
         coordinator?.copySelectedRowsAsJson(indices: resolvedRowSelection())
     }
 
     func pasteRows() {
         if coordinator?.tabManager.selectedTab?.display.resultsViewMode == .structure {
             coordinator?.structureActions?.pasteRows?()
-        } else {
-            coordinator?.pasteRows()
+            return
         }
+        guard dataGridOwnsSelection else { return }
+        coordinator?.pasteRows()
     }
 
     // MARK: - Per-Window State (replaces AppState.shared for menu enablement)
@@ -316,7 +331,7 @@ final class MainContentCommandActions {
     }
 
     var isCurrentTabEditable: Bool {
-        coordinator?.tabManager.selectedTab?.tableContext.isEditable == true
+        rowSelectionOwner != .none && coordinator?.tabManager.selectedTab?.tableContext.isEditable == true
     }
 
     var isTableTab: Bool {
