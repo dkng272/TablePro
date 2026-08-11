@@ -59,7 +59,6 @@ enum ChartSpecInferrer {
 
     // MARK: Private
 
-    private static let iso8601DateFormatter = ISO8601DateFormatter()
     private static let numericLocale = Locale(identifier: "en_US_POSIX")
 
     private static func sampledKind(at ordinal: Int, in tableRows: TableRows) -> ColumnKind {
@@ -70,7 +69,7 @@ enum ChartSpecInferrer {
             return .unsupported
         }
 
-        if values.allSatisfy(isISO8601Date) {
+        if values.allSatisfy({ ChartDateParser.parse($0) != nil }) {
             return .temporal
         }
         if values.allSatisfy({ Decimal(string: $0, locale: numericLocale) != nil }) {
@@ -78,19 +77,4 @@ enum ChartSpecInferrer {
         }
         return .category
     }
-
-    private static func isISO8601Date(_ value: String) -> Bool {
-        iso8601DateFormatter.date(from: value) != nil
-            || DateFormatter.iso8601Date.date(from: value) != nil
-    }
-}
-
-private extension DateFormatter {
-    static let iso8601Date: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .iso8601)
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 }

@@ -32,6 +32,26 @@ struct StatusBarStructureState {
     let onRemove: () -> Void
 }
 
+// MARK: - MainStatusBarPolicy
+
+enum MainStatusBarPolicy {
+    static func showsRowStatus(viewMode: ResultsViewMode) -> Bool {
+        viewMode == .data || viewMode == .json
+    }
+
+    static func showsGridControls(viewMode: ResultsViewMode) -> Bool {
+        viewMode == .data || viewMode == .json
+    }
+
+    static func showsExport(viewMode: ResultsViewMode, hasColumns: Bool) -> Bool {
+        hasColumns && (viewMode == .data || viewMode == .chart)
+    }
+
+    static func showsAddRow(viewMode: ResultsViewMode, canAddRow: Bool) -> Bool {
+        viewMode == .data && canAddRow
+    }
+}
+
 // MARK: - MainStatusBarView
 
 struct MainStatusBarView: View {
@@ -79,7 +99,7 @@ struct MainStatusBarView: View {
 
             Spacer()
 
-            if showsDataChrome, snapshot.hasRows {
+            if MainStatusBarPolicy.showsRowStatus(viewMode: viewMode), snapshot.hasRows {
                 HStack(spacing: 4) {
                     if snapshot.pagination.isLoadingMore {
                         ProgressView()
@@ -147,34 +167,34 @@ struct MainStatusBarView: View {
                     structureFooterControls(state: structureState.footer)
                 }
 
-                if showsDataChrome {
-                    if Self.showsExport(viewMode: viewMode, hasColumns: snapshot.hasColumns), let onExport {
-                        Button {
-                            onExport()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "square.and.arrow.up")
-                                Text("Export")
-                            }
+                if MainStatusBarPolicy.showsExport(viewMode: viewMode, hasColumns: snapshot.hasColumns), let onExport {
+                    Button {
+                        onExport()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Export")
                         }
-                        .controlSize(.small)
-                        .accessibilityLabel(String(localized: "Export Query Results"))
                     }
+                    .controlSize(.small)
+                    .accessibilityLabel(String(localized: "Export Query Results"))
+                }
 
-                    if Self.showsAddRow(viewMode: viewMode, canAddRow: onAddRow != nil), let onAddRow {
-                        Button {
-                            onAddRow()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "plus")
-                                Text("Add")
-                            }
+                if MainStatusBarPolicy.showsAddRow(viewMode: viewMode, canAddRow: onAddRow != nil), let onAddRow {
+                    Button {
+                        onAddRow()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                            Text("Add")
                         }
-                        .controlSize(.small)
-                        .help(addRowHelp)
-                        .accessibilityLabel(String(localized: "Add Row"))
                     }
+                    .controlSize(.small)
+                    .help(addRowHelp)
+                    .accessibilityLabel(String(localized: "Add Row"))
+                }
 
+                if MainStatusBarPolicy.showsGridControls(viewMode: viewMode) {
                     if snapshot.hasColumns {
                         Button {
                             showColumnPopover.toggle()
@@ -253,24 +273,12 @@ struct MainStatusBarView: View {
         }
     }
 
-    static func showsAddRow(viewMode: ResultsViewMode, canAddRow: Bool) -> Bool {
-        viewMode == .data && canAddRow
-    }
-
-    static func showsExport(viewMode: ResultsViewMode, hasColumns: Bool) -> Bool {
-        hasColumns && (viewMode == .data || viewMode == .chart)
-    }
-
     // MARK: Private
 
     @State private var showColumnPopover = false
 
     private var isStructureMode: Bool {
         viewMode == .structure
-    }
-
-    private var showsDataChrome: Bool {
-        !isStructureMode
     }
 
     private var filterToggleHelp: String {

@@ -72,6 +72,39 @@ struct ChartSpecInferrerTests {
         #expect(spec.yColumns.map(\.ordinal) == [1])
     }
 
+    @Test("Missing metadata samples space-separated SQL datetimes as temporal columns")
+    func missingMetadataSamplesSpaceSeparatedSQLDatetimes() throws {
+        let rows = TableRows.from(
+            queryRows: [["2026-01-01 12:30:00", "12"], ["2026-01-01 08:15:00", "10"]],
+            columns: ["created_at", "revenue"],
+            columnTypes: []
+        )
+
+        let spec = try #require(ChartSpecInferrer.infer(from: rows))
+
+        #expect(spec.chartType == .line)
+        #expect(spec.xColumn == ChartColumnID(ordinal: 0, name: "created_at"))
+        #expect(spec.yColumns == [ChartColumnID(ordinal: 1, name: "revenue")])
+    }
+
+    @Test("Short metadata samples T-separated SQL datetimes as temporal columns")
+    func shortMetadataSamplesTSeparatedSQLDatetimes() throws {
+        let rows = TableRows.from(
+            queryRows: [
+                ["true", "2026-01-01T12:30:00", "12"],
+                ["false", "2026-01-01T08:15:00", "10"],
+            ],
+            columns: ["active", "created_at", "revenue"],
+            columnTypes: [.boolean(rawType: "BOOLEAN")]
+        )
+
+        let spec = try #require(ChartSpecInferrer.infer(from: rows))
+
+        #expect(spec.chartType == .line)
+        #expect(spec.xColumn == ChartColumnID(ordinal: 1, name: "created_at"))
+        #expect(spec.yColumns == [ChartColumnID(ordinal: 2, name: "revenue")])
+    }
+
     @Test("Missing metadata samples text as category columns")
     func missingMetadataSamplesCategories() throws {
         let rows = TableRows.from(

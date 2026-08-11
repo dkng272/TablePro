@@ -283,6 +283,27 @@ struct QueryResultChartViewTests {
         #expect(label == "revenue, quarter: Q1")
     }
 
+    @Test("Render series groups colliding display labels by stable identity")
+    func renderSeriesUsesStableIdentity() throws {
+        let rows = TableRows.from(
+            queryRows: [["Q1", "10", nil], ["Q2", "12", "NULL"]],
+            columns: ["quarter", "revenue", "region"],
+            columnTypes: [.text(rawType: nil), .decimal(rawType: nil), .text(rawType: nil)]
+        )
+        let spec = ChartSpec(
+            chartType: .line,
+            xColumn: .init(ordinal: 0, name: "quarter"),
+            yColumns: [.init(ordinal: 1, name: "revenue")],
+            seriesColumn: .init(ordinal: 2, name: "region")
+        )
+        let data = try ChartDataBuilder.build(from: rows, spec: spec)
+
+        let renderSeries = data.points.map(ChartRenderSeries.init(point:))
+
+        #expect(Set(renderSeries.map(\.groupingID)).count == 2)
+        #expect(renderSeries.map(\.styleLabel) == ["NULL", "NULL"])
+    }
+
     @Test("The chart view can be constructed")
     func viewConstruction() {
         let view = QueryResultChartView(tableRows: TableRows(), spec: .constant(nil))
