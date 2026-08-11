@@ -51,11 +51,11 @@ enum ChartSpecInferrer {
         }.filter { !$0.isEmpty }
         guard !values.isEmpty else { return .unsupported }
 
-        if values.allSatisfy({ Decimal(string: $0) != nil }) {
-            return .numeric
-        }
         if values.allSatisfy(isISO8601Date) {
             return .temporal
+        }
+        if values.allSatisfy({ Decimal(string: $0, locale: numericLocale) != nil }) {
+            return .numeric
         }
         return .category
     }
@@ -64,6 +64,8 @@ enum ChartSpecInferrer {
         ISO8601DateFormatter().date(from: value) != nil
             || DateFormatter.iso8601Date.date(from: value) != nil
     }
+
+    private static let numericLocale = Locale(identifier: "en_US_POSIX")
 }
 
 private extension DateFormatter {
