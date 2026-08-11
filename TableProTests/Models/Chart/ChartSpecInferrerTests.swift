@@ -1,6 +1,6 @@
+@testable import TablePro
 import TableProPluginKit
 import Testing
-@testable import TablePro
 
 @Suite("ChartSpecInferrer")
 struct ChartSpecInferrerTests {
@@ -103,7 +103,7 @@ struct ChartSpecInferrerTests {
     @Test("Missing metadata samples at most fifty rows")
     func missingMetadataSamplesAtMostFiftyRows() throws {
         let rows = TableRows.from(
-            queryRows: (0..<51).map { index in
+            queryRows: (0 ..< 51).map { index in
                 [index == 50 ? "not-a-number" : "1", "10"]
             },
             columns: ["price", "volume"],

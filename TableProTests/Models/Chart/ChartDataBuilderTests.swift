@@ -1,9 +1,11 @@
+@testable import TablePro
 import TableProPluginKit
 import Testing
-@testable import TablePro
 
 @Suite("ChartDataBuilder")
 struct ChartDataBuilderTests {
+    // MARK: Internal
+
     @Test("Build skips null and malformed Y values")
     func skipsInvalidValues() throws {
         let rows = Self.rows(
@@ -22,6 +24,67 @@ struct ChartDataBuilderTests {
         #expect(data.points.count == 1)
         #expect(data.points[0].y == 10)
         #expect(data.skippedValueCount == 2)
+    }
+
+    @Test("Null X skips one attempted point per Y column")
+    func nullXSkipsEachSeriesPoint() throws {
+        let rows = Self.rows(
+            values: [[nil, "10", "4"], ["Q1", "12", "5"]],
+            columns: ["quarter", "revenue", "margin"],
+            types: [.text(rawType: nil), .decimal(rawType: nil), .decimal(rawType: nil)]
+        )
+        let spec = ChartSpec(
+            chartType: .bar,
+            xColumn: .init(ordinal: 0, name: "quarter"),
+            yColumns: [.init(ordinal: 1, name: "revenue"), .init(ordinal: 2, name: "margin")]
+        )
+
+        let data = try ChartDataBuilder.build(from: rows, spec: spec)
+
+        #expect(data.points.map(\.x) == [.category("Q1"), .category("Q1")])
+        #expect(data.skippedValueCount == 2)
+    }
+
+    @Test("Malformed numeric X is skipped")
+    func malformedNumericXIsSkipped() throws {
+        let rows = Self.rows(
+            values: [["bad", "10"], ["2", "12"]],
+            columns: ["x", "y"],
+            types: [.integer(rawType: nil), .integer(rawType: nil)]
+        )
+        let spec = ChartSpec(
+            chartType: .scatter,
+            xColumn: .init(ordinal: 0, name: "x"),
+            yColumns: [.init(ordinal: 1, name: "y")]
+        )
+
+        let data = try ChartDataBuilder.build(from: rows, spec: spec)
+
+        #expect(data.points.map(\.x) == [.number(2)])
+        #expect(data.skippedValueCount == 1)
+    }
+
+    @Test("Malformed date X is skipped")
+    func malformedDateXIsSkipped() throws {
+        let rows = Self.rows(
+            values: [["bad-date", "10"], ["2026-01-01", "12"]],
+            columns: ["day", "y"],
+            types: [.date(rawType: nil), .decimal(rawType: nil)]
+        )
+        let spec = ChartSpec(
+            chartType: .line,
+            xColumn: .init(ordinal: 0, name: "day"),
+            yColumns: [.init(ordinal: 1, name: "y")]
+        )
+
+        let data = try ChartDataBuilder.build(from: rows, spec: spec)
+
+        #expect(data.points.count == 1)
+        guard case .date = data.points.first?.x else {
+            Issue.record("Expected the valid date X value to remain")
+            return
+        }
+        #expect(data.skippedValueCount == 1)
     }
 
     @Test("Multiple Y columns become separate stable series")
@@ -99,7 +162,7 @@ struct ChartDataBuilderTests {
 
     @Test("Sampling is deterministic and preserves endpoints")
     func samplingPreservesEndpoints() throws {
-        let values: [[String?]] = (0..<5_001).map { [String($0), String($0 * 2)] }
+        let values: [[String?]] = (0 ..< 5001).map { [String($0), String($0 * 2)] }
         let rows = Self.rows(
             values: values,
             columns: ["x", "y"],
@@ -114,16 +177,16 @@ struct ChartDataBuilderTests {
         let first = try ChartDataBuilder.build(from: rows, spec: spec)
         let second = try ChartDataBuilder.build(from: rows, spec: spec)
 
-        #expect(first.points.count == 5_000)
+        #expect(first.points.count == 5000)
         #expect(first.points.first?.x == .number(0))
-        #expect(first.points.last?.x == .number(5_000))
+        #expect(first.points.last?.x == .number(5000))
         #expect(first.points.map(\.id) == second.points.map(\.id))
         #expect(first.isSampled)
     }
 
     @Test("Caller limit cannot exceed the chart point cap")
     func callerLimitIsClampedToDefaultCap() throws {
-        let values: [[String?]] = (0..<5_001).map { [String($0), String($0 * 2)] }
+        let values: [[String?]] = (0 ..< 5001).map { [String($0), String($0 * 2)] }
         let rows = Self.rows(
             values: values,
             columns: ["x", "y"],
@@ -135,9 +198,9 @@ struct ChartDataBuilderTests {
             yColumns: [.init(ordinal: 1, name: "y")]
         )
 
-        let data = try ChartDataBuilder.build(from: rows, spec: spec, limit: 10_000)
+        let data = try ChartDataBuilder.build(from: rows, spec: spec, limit: 10000)
 
-        #expect(data.points.count == 5_000)
+        #expect(data.points.count == 5000)
         #expect(data.isSampled)
     }
 
@@ -161,9 +224,13 @@ struct ChartDataBuilderTests {
         #expect(data.isSampled)
     }
 
+    // MARK: Private
+
     private static func rows(
         values: [[String?]], columns: [String], types: [ColumnType]
-    ) -> TableRows {
+    )
+        -> TableRows
+    {
         TableRows.from(
             queryRows: values.map { $0.map(PluginCellValue.fromOptional) },
             columns: columns,

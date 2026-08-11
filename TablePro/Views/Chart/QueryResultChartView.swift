@@ -1,13 +1,20 @@
 import Charts
 import SwiftUI
 
+// MARK: - QueryResultChartState
+
 enum QueryResultChartState: Equatable {
     case noRows
     case needsConfiguration
     case configured(ChartSpec)
 
+    // MARK: Internal
+
     static func resolve(tableRows: TableRows, storedSpec: ChartSpec?) -> Self {
-        guard !tableRows.columns.isEmpty, tableRows.count > 0 else { return .noRows }
+        // swiftformat:disable:next isEmpty
+        guard !tableRows.columns.isEmpty, tableRows.count > 0 else {
+            return .noRows
+        }
         if let storedSpec, let valid = storedSpec.validated(for: tableRows) {
             return .configured(valid)
         }
@@ -18,12 +25,14 @@ enum QueryResultChartState: Equatable {
     }
 
     static func reconciledSpec(tableRows: TableRows, storedSpec: ChartSpec?) -> ChartSpec? {
-        guard case .configured(let spec) = resolve(tableRows: tableRows, storedSpec: storedSpec) else {
+        guard case let .configured(spec) = resolve(tableRows: tableRows, storedSpec: storedSpec) else {
             return nil
         }
         return spec
     }
 }
+
+// MARK: - QueryResultChartReconciliation
 
 struct QueryResultChartReconciliation: Equatable {
     let storedSpec: ChartSpec?
@@ -34,9 +43,13 @@ struct QueryResultChartReconciliation: Equatable {
     }
 }
 
+// MARK: - QueryResultChartDataState
+
 enum QueryResultChartDataState: Equatable {
     case ready(ChartData)
     case invalidConfiguration
+
+    // MARK: Internal
 
     static func resolve(tableRows: TableRows, spec: ChartSpec) -> Self {
         guard let data = try? ChartDataBuilder.build(from: tableRows, spec: spec) else {
@@ -46,8 +59,13 @@ enum QueryResultChartDataState: Equatable {
     }
 }
 
+// MARK: - QueryResultChartView
+
 struct QueryResultChartView: View {
+    // MARK: Internal
+
     let tableRows: TableRows
+
     @Binding var spec: ChartSpec?
 
     var body: some View {
@@ -57,7 +75,7 @@ struct QueryResultChartView: View {
                 noRowsView
             case .needsConfiguration:
                 needsConfigurationView
-            case .configured(let resolvedSpec):
+            case let .configured(resolvedSpec):
                 let reconciliation = QueryResultChartReconciliation(
                     storedSpec: spec,
                     resolvedSpec: resolvedSpec
@@ -72,6 +90,8 @@ struct QueryResultChartView: View {
         }
     }
 
+    // MARK: Private
+
     private var noRowsView: some View {
         ContentUnavailableView {
             Label(String(localized: "No rows to chart"), systemImage: "chart.xyaxis.line")
@@ -85,6 +105,14 @@ struct QueryResultChartView: View {
             Label(String(localized: "Choose chart columns"), systemImage: "slider.horizontal.3")
         } description: {
             Text(String(localized: "Charts need an X-axis column and at least one numeric Y-axis column."))
+        }
+    }
+
+    private var invalidConfigurationView: some View {
+        ContentUnavailableView {
+            Label(String(localized: "Unable to build chart"), systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(String(localized: "Choose a different X axis or at least one Y-axis column."))
         }
     }
 
@@ -105,19 +133,11 @@ struct QueryResultChartView: View {
             Divider()
 
             switch QueryResultChartDataState.resolve(tableRows: tableRows, spec: resolvedSpec) {
-            case .ready(let data):
+            case let .ready(data):
                 chartCanvas(data: data, spec: resolvedSpec)
             case .invalidConfiguration:
                 invalidConfigurationView
             }
-        }
-    }
-
-    private var invalidConfigurationView: some View {
-        ContentUnavailableView {
-            Label(String(localized: "Unable to build chart"), systemImage: "exclamationmark.triangle")
-        } description: {
-            Text(String(localized: "Choose a different X axis or at least one Y-axis column."))
         }
     }
 
@@ -147,48 +167,6 @@ struct QueryResultChartView: View {
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 10)
-    }
-
-    @ChartContentBuilder
-    private func mark(for point: ChartPoint, chartType: ChartType) -> some ChartContent {
-        switch point.x {
-        case .category(let value):
-            typedMark(for: point, x: value, chartType: chartType)
-        case .number(let value):
-            typedMark(for: point, x: value, chartType: chartType)
-        case .date(let value):
-            typedMark(for: point, x: value, chartType: chartType)
-        }
-    }
-
-    @ChartContentBuilder
-    private func typedMark<X: Plottable>(
-        for point: ChartPoint,
-        x: X,
-        chartType: ChartType
-    ) -> some ChartContent {
-        switch chartType {
-        case .line:
-            LineMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.series))
-                .accessibilityLabel(point.series)
-                .accessibilityValue(point.y.formatted())
-        case .bar:
-            BarMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.series))
-                .accessibilityLabel(point.series)
-                .accessibilityValue(point.y.formatted())
-        case .area:
-            AreaMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.series))
-                .accessibilityLabel(point.series)
-                .accessibilityValue(point.y.formatted())
-        case .scatter:
-            PointMark(x: .value("X", x), y: .value("Y", point.y))
-                .foregroundStyle(by: .value("Series", point.series))
-                .accessibilityLabel(point.series)
-                .accessibilityValue(point.y.formatted())
-        }
     }
 
     @ViewBuilder
@@ -226,9 +204,55 @@ struct QueryResultChartView: View {
         }
     }
 
+    @ChartContentBuilder
+    private func mark(for point: ChartPoint, chartType: ChartType) -> some ChartContent {
+        switch point.x {
+        case let .category(value):
+            typedMark(for: point, x: value, chartType: chartType)
+        case let .number(value):
+            typedMark(for: point, x: value, chartType: chartType)
+        case let .date(value):
+            typedMark(for: point, x: value, chartType: chartType)
+        }
+    }
+
+    @ChartContentBuilder
+    private func typedMark<X: Plottable>(
+        for point: ChartPoint,
+        x: X,
+        chartType: ChartType
+    )
+        -> some ChartContent
+    {
+        switch chartType {
+        case .line:
+            LineMark(x: .value("X", x), y: .value("Y", point.y))
+                .foregroundStyle(by: .value("Series", point.series))
+                .accessibilityLabel(point.series)
+                .accessibilityValue(point.y.formatted())
+        case .bar:
+            BarMark(x: .value("X", x), y: .value("Y", point.y))
+                .foregroundStyle(by: .value("Series", point.series))
+                .accessibilityLabel(point.series)
+                .accessibilityValue(point.y.formatted())
+        case .area:
+            AreaMark(x: .value("X", x), y: .value("Y", point.y))
+                .foregroundStyle(by: .value("Series", point.series))
+                .accessibilityLabel(point.series)
+                .accessibilityValue(point.y.formatted())
+        case .scatter:
+            PointMark(x: .value("X", x), y: .value("Y", point.y))
+                .foregroundStyle(by: .value("Series", point.series))
+                .accessibilityLabel(point.series)
+                .accessibilityValue(point.y.formatted())
+        }
+    }
+
     private func displayTitle(for spec: ChartSpec) -> String {
         let title = spec.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard title.isEmpty else { return title }
+        guard title.isEmpty else {
+            return title
+        }
         let measures = spec.yColumns.map(\.name).formatted()
         return String(
             localized: "\(measures) by \(spec.xColumn.name)",

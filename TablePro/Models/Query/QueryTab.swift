@@ -3,6 +3,8 @@ import Observation
 import os
 import TableProPluginKit
 
+// MARK: - ResultsViewMode
+
 enum ResultsViewMode: String, Equatable {
     case data
     case chart
@@ -10,45 +12,10 @@ enum ResultsViewMode: String, Equatable {
     case json
 }
 
+// MARK: - QueryTab
+
 struct QueryTab: Identifiable, Equatable {
-    let id: UUID
-    var title: String
-    var tabType: TabType
-    var isPreview: Bool
-
-    var content: TabQueryContent
-    var execution: TabExecutionState
-    var tableContext: TabTableContext
-    var display: TabDisplayState
-
-    var pendingChanges: TabChangeSnapshot
-    var selectedRowIndices: Set<Int>
-    var sortState: SortState
-    var filterState: TabFilterState
-    var columnLayout: ColumnLayoutState
-    var pagination: PaginationState
-    var hasUserInteraction: Bool
-    var schemaVersion: Int
-    var metadataVersion: Int
-    var paginationVersion: Int
-    var loadEpoch: Int = 0
-
-    var pendingRestoredSort: [PersistedSortColumn]?
-    var restoredPage: Int?
-    var restoredCursorOffset: Int?
-    var restoredCursorLength: Int?
-
-    private static func clampedCursorOffset(_ offset: Int?, in query: String) -> Int? {
-        guard let offset, offset >= 0 else { return nil }
-        return min(offset, (query as NSString).length)
-    }
-
-    private static func clampedCursorLength(_ length: Int?, from offset: Int?, in query: String) -> Int? {
-        guard let length, length > 0, let start = clampedCursorOffset(offset, in: query) else { return nil }
-        let available = (query as NSString).length - start
-        guard available > 0 else { return nil }
-        return min(length, available)
-    }
+    // MARK: Lifecycle
 
     init(
         id: UUID = UUID(),
@@ -122,24 +89,64 @@ struct QueryTab: Identifiable, Equatable {
         )
     }
 
-    @MainActor static func buildBaseTableQuery(
+    // MARK: Internal
+
+    let id: UUID
+    var title: String
+    var tabType: TabType
+    var isPreview: Bool
+
+    var content: TabQueryContent
+    var execution: TabExecutionState
+    var tableContext: TabTableContext
+    var display: TabDisplayState
+
+    var pendingChanges: TabChangeSnapshot
+    var selectedRowIndices: Set<Int>
+    var sortState: SortState
+    var filterState: TabFilterState
+    var columnLayout: ColumnLayoutState
+    var pagination: PaginationState
+    var hasUserInteraction: Bool
+    var schemaVersion: Int
+    var metadataVersion: Int
+    var paginationVersion: Int
+    var loadEpoch: Int = 0
+
+    var pendingRestoredSort: [PersistedSortColumn]?
+    var restoredPage: Int?
+    var restoredCursorOffset: Int?
+    var restoredCursorLength: Int?
+
+    var hasUserActiveSort: Bool {
+        sortState.isSorting && sortState.source == .user
+    }
+
+    @MainActor
+    static func buildBaseTableQuery(
         tableName: String,
         databaseType: DatabaseType,
         schemaName: String? = nil,
         quoteIdentifier: ((String) -> String)? = nil
-    ) throws -> String {
+    )
+        throws -> String
+    {
         let pageSize = AppSettingsManager.shared.dataGrid.defaultPageSize
 
         if let pluginDriver = PluginManager.shared.queryBuildingDriver(for: databaseType),
            let pluginQuery = pluginDriver.buildBrowseQuery(
                table: tableName, schema: schemaName, sortColumns: [], columns: [], limit: pageSize, offset: 0
-           ) {
+           )
+        {
             return pluginQuery
         }
 
         switch PluginManager.shared.editorLanguage(for: databaseType) {
         case .javascript:
-            let escaped = tableName.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            let escaped = tableName.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(
+                of: "\"",
+                with: "\\\""
+            )
             return "db[\"\(escaped)\"].find({}).limit(\(pageSize))"
         case .bash:
             return "SCAN 0 MATCH * COUNT \(pageSize)"
@@ -164,8 +171,21 @@ struct QueryTab: Identifiable, Equatable {
         FileManager.default.displayName(atPath: url.path(percentEncoded: false))
     }
 
-    var hasUserActiveSort: Bool {
-        sortState.isSorting && sortState.source == .user
+    static func == (lhs: QueryTab, rhs: QueryTab) -> Bool {
+        lhs.id == rhs.id
+            && lhs.title == rhs.title
+            && lhs.execution == rhs.execution
+            && lhs.schemaVersion == rhs.schemaVersion
+            && lhs.paginationVersion == rhs.paginationVersion
+            && lhs.pagination == rhs.pagination
+            && lhs.sortState == rhs.sortState
+            && lhs.display == rhs.display
+            && lhs.tableContext.isEditable == rhs.tableContext.isEditable
+            && lhs.tableContext.isView == rhs.tableContext.isView
+            && lhs.tabType == rhs.tabType
+            && lhs.isPreview == rhs.isPreview
+            && lhs.hasUserInteraction == rhs.hasUserInteraction
+            && lhs.loadEpoch == rhs.loadEpoch
     }
 
     func toPersistedTab(windowGroupIndex: Int? = nil) -> PersistedTab {
@@ -173,7 +193,9 @@ struct QueryTab: Identifiable, Equatable {
 
         let persistedSort: [PersistedSortColumn]? = {
             let resolved = sortState.columns.compactMap { column -> PersistedSortColumn? in
-                guard let name = column.columnName else { return nil }
+                guard let name = column.columnName else {
+                    return nil
+                }
                 return PersistedSortColumn(columnName: name, direction: column.direction)
             }
             return resolved.isEmpty ? nil : resolved
@@ -207,20 +229,23 @@ struct QueryTab: Identifiable, Equatable {
         )
     }
 
-    static func == (lhs: QueryTab, rhs: QueryTab) -> Bool {
-        lhs.id == rhs.id
-            && lhs.title == rhs.title
-            && lhs.execution == rhs.execution
-            && lhs.schemaVersion == rhs.schemaVersion
-            && lhs.paginationVersion == rhs.paginationVersion
-            && lhs.pagination == rhs.pagination
-            && lhs.sortState == rhs.sortState
-            && lhs.display == rhs.display
-            && lhs.tableContext.isEditable == rhs.tableContext.isEditable
-            && lhs.tableContext.isView == rhs.tableContext.isView
-            && lhs.tabType == rhs.tabType
-            && lhs.isPreview == rhs.isPreview
-            && lhs.hasUserInteraction == rhs.hasUserInteraction
-            && lhs.loadEpoch == rhs.loadEpoch
+    // MARK: Private
+
+    private static func clampedCursorOffset(_ offset: Int?, in query: String) -> Int? {
+        guard let offset, offset >= 0 else {
+            return nil
+        }
+        return min(offset, (query as NSString).length)
+    }
+
+    private static func clampedCursorLength(_ length: Int?, from offset: Int?, in query: String) -> Int? {
+        guard let length, length > 0, let start = clampedCursorOffset(offset, in: query) else {
+            return nil
+        }
+        let available = (query as NSString).length - start
+        guard available > 0 else {
+            return nil
+        }
+        return min(length, available)
     }
 }

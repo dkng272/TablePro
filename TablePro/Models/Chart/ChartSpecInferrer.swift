@@ -1,7 +1,11 @@
 import Foundation
 import TableProPluginKit
 
+// MARK: - ChartSpecInferrer
+
 enum ChartSpecInferrer {
+    // MARK: Internal
+
     static func infer(from tableRows: TableRows) -> ChartSpec? {
         let columns = tableRows.columns.enumerated().map {
             ChartColumnID(ordinal: $0.offset, name: $0.element)
@@ -25,6 +29,8 @@ enum ChartSpecInferrer {
         kind(at: ordinal, in: tableRows) == .numeric
     }
 
+    // MARK: Private
+
     private enum Kind {
         case numeric
         case temporal
@@ -32,17 +38,23 @@ enum ChartSpecInferrer {
         case unsupported
     }
 
+    private static let numericLocale = Locale(identifier: "en_US_POSIX")
+
     private static func kind(at ordinal: Int, in tableRows: TableRows) -> Kind {
         guard ordinal < tableRows.columnTypes.count else {
             return sampledKind(at: ordinal, in: tableRows)
         }
 
         switch tableRows.columnTypes[ordinal] {
-        case .integer, .decimal:
+        case .integer,
+             .decimal:
             return .numeric
-        case .date, .timestamp, .datetime:
+        case .date,
+             .timestamp,
+             .datetime:
             return .temporal
-        case .text, .enumType:
+        case .text,
+             .enumType:
             return .category
         default:
             return .unsupported
@@ -53,7 +65,9 @@ enum ChartSpecInferrer {
         let values = tableRows.rows.prefix(50).compactMap { row in
             row.values[ordinal].asText?.trimmingCharacters(in: .whitespacesAndNewlines)
         }.filter { !$0.isEmpty }
-        guard !values.isEmpty else { return .unsupported }
+        guard !values.isEmpty else {
+            return .unsupported
+        }
 
         if values.allSatisfy(isISO8601Date) {
             return .temporal
@@ -68,8 +82,6 @@ enum ChartSpecInferrer {
         ISO8601DateFormatter().date(from: value) != nil
             || DateFormatter.iso8601Date.date(from: value) != nil
     }
-
-    private static let numericLocale = Locale(identifier: "en_US_POSIX")
 }
 
 private extension DateFormatter {

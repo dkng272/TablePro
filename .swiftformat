@@ -39,7 +39,7 @@
 # Braces
 --allman false
 --elseposition same-line
---ifdefindent no-indent
+--ifdef no-indent
 
 # Misc
 --self remove

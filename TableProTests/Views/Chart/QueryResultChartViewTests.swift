@@ -1,11 +1,15 @@
 import SwiftUI
+@testable import TablePro
 import TableProPluginKit
 import Testing
-@testable import TablePro
+
+// MARK: - QueryResultChartViewTests
 
 @MainActor
 @Suite("QueryResultChartView")
 struct QueryResultChartViewTests {
+    // MARK: Internal
+
     @Test("Empty results select the no-rows state")
     func emptyResults() {
         #expect(QueryResultChartState.resolve(tableRows: TableRows(), storedSpec: nil) == .noRows)
@@ -19,7 +23,7 @@ struct QueryResultChartViewTests {
             columnTypes: [.text(rawType: nil), .decimal(rawType: nil)]
         )
         let state = QueryResultChartState.resolve(tableRows: rows, storedSpec: nil)
-        guard case .configured(let spec) = state else {
+        guard case let .configured(spec) = state else {
             Issue.record("Expected configured chart state")
             return
         }
@@ -234,6 +238,8 @@ struct QueryResultChartViewTests {
         #expect(type(of: view.body) != Never.self)
     }
 
+    // MARK: Private
+
     private static func compatibleRows() -> TableRows {
         TableRows.from(
             queryRows: [["Q1", "10"]],
@@ -245,7 +251,8 @@ struct QueryResultChartViewTests {
 
 private func localizedChartString(_ key: String, locale: String) -> String {
     guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"),
-          let bundle = Bundle(path: path) else {
+          let bundle = Bundle(path: path) else
+    {
         return key
     }
     return bundle.localizedString(forKey: key, value: nil, table: nil)

@@ -1,14 +1,20 @@
 import Foundation
 import TableProPluginKit
 
+// MARK: - ChartDataBuilder
+
 enum ChartDataBuilder {
-    static let defaultPointLimit = 5_000
+    // MARK: Internal
+
+    static let defaultPointLimit = 5000
 
     static func build(
         from tableRows: TableRows,
         spec: ChartSpec,
         limit: Int = defaultPointLimit
-    ) throws -> ChartData {
+    )
+        throws -> ChartData
+    {
         guard let validSpec = spec.validated(for: tableRows) else {
             throw ChartDataBuilderError.invalidSpecification
         }
@@ -22,23 +28,31 @@ enum ChartDataBuilder {
         )
     }
 
+    // MARK: Private
+
     private static func buildAllPoints(
         from tableRows: TableRows,
         spec: ChartSpec
-    ) -> (points: [ChartPoint], skipped: Int) {
+    )
+        -> (points: [ChartPoint], skipped: Int)
+    {
         var points: [ChartPoint] = []
         var skipped = 0
 
         for (rowIndex, row) in tableRows.rows.enumerated() {
-            let x = parseX(
+            guard let x = parseX(
                 row.values[spec.xColumn.ordinal].asText,
                 type: tableRows.columnTypes[safe: spec.xColumn.ordinal]
-            )
+            ) else {
+                skipped += spec.yColumns.count
+                continue
+            }
             let explicitSeries = spec.seriesColumn.flatMap { row.values[$0.ordinal].asText }
 
             for yColumn in spec.yColumns {
                 guard let yText = row.values[yColumn.ordinal].asText,
-                      let y = Double(yText) else {
+                      let y = Double(yText) else
+                {
                     skipped += 1
                     continue
                 }
@@ -57,13 +71,19 @@ enum ChartDataBuilder {
         return (points, skipped)
     }
 
-    private static func parseX(_ text: String?, type: ColumnType?) -> ChartXValue {
-        let value = text ?? ""
+    private static func parseX(_ text: String?, type: ColumnType?) -> ChartXValue? {
+        guard let value = text else {
+            return nil
+        }
+
         switch type {
-        case .integer, .decimal:
-            return Double(value).map(ChartXValue.number) ?? .category(value)
-        case .date, .timestamp, .datetime:
-            return parseDate(value).map(ChartXValue.date) ?? .category(value)
+        case .integer,
+             .decimal:
+            return Double(value).map(ChartXValue.number)
+        case .date,
+             .timestamp,
+             .datetime:
+            return parseDate(value).map(ChartXValue.date)
         default:
             return .category(value)
         }
@@ -90,11 +110,11 @@ enum ChartDataBuilder {
     private static func sort(_ points: [ChartPoint], order: ChartSortOrder) -> [ChartPoint] {
         switch order {
         case .source:
-            return points
+            points
         case .ascendingX:
-            return sortByX(points, ascending: true)
+            sortByX(points, ascending: true)
         case .descendingX:
-            return sortByX(points, ascending: false)
+            sortByX(points, ascending: false)
         }
     }
 
@@ -111,33 +131,35 @@ enum ChartDataBuilder {
     private static func compare(_ lhs: ChartXValue, _ rhs: ChartXValue) -> ComparisonResult {
         switch (lhs, rhs) {
         case let (.number(left), .number(right)):
-            return left == right ? .orderedSame : (left < right ? .orderedAscending : .orderedDescending)
+            left == right ? .orderedSame : (left < right ? .orderedAscending : .orderedDescending)
         case let (.date(left), .date(right)):
-            return left.compare(right)
+            left.compare(right)
         case let (.category(left), .category(right)):
-            return left.compare(right, options: .literal)
+            left.compare(right, options: .literal)
         default:
-            return xSortKey(lhs).compare(xSortKey(rhs), options: .literal)
+            xSortKey(lhs).compare(xSortKey(rhs), options: .literal)
         }
     }
 
     private static func xSortKey(_ value: ChartXValue) -> String {
         switch value {
-        case .category(let value):
-            return "0:\(value)"
-        case .number(let value):
-            return "1:\(value)"
-        case .date(let value):
-            return "2:\(value.timeIntervalSinceReferenceDate)"
+        case let .category(value):
+            "0:\(value)"
+        case let .number(value):
+            "1:\(value)"
+        case let .date(value):
+            "2:\(value.timeIntervalSinceReferenceDate)"
         }
     }
 
     private static func sample(_ points: [ChartPoint], limit: Int) -> [ChartPoint] {
-        guard limit > 0, points.count > limit else { return limit > 0 ? points : [] }
+        guard limit > 0, points.count > limit else {
+            return limit > 0 ? points : []
+        }
         if limit == 1 {
             return [points[0]]
         }
-        return (0..<limit).map { index in
+        return (0 ..< limit).map { index in
             let sampledIndex = Int(round(Double(index) * Double(points.count - 1) / Double(limit - 1)))
             return points[sampledIndex]
         }

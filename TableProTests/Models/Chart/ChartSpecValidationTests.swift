@@ -1,6 +1,6 @@
+@testable import TablePro
 import TableProPluginKit
 import Testing
-@testable import TablePro
 
 @Suite("ChartSpec validation")
 struct ChartSpecValidationTests {

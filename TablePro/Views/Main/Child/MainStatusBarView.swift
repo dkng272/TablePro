@@ -1,11 +1,6 @@
-//
-//  MainStatusBarView.swift
-//  TablePro
-//
-//  Created by Ngo Quoc Dat on 24/12/25.
-//
-
 import SwiftUI
+
+// MARK: - PaginationCallbacks
 
 struct PaginationCallbacks {
     let onFirst: () -> Void
@@ -18,6 +13,8 @@ struct PaginationCallbacks {
     let onRequestExactCount: () -> Void
 }
 
+// MARK: - StatusBarColumnState
+
 struct StatusBarColumnState {
     let hidden: Set<String>
     let all: [String]
@@ -27,17 +24,24 @@ struct StatusBarColumnState {
     let onReset: () -> Void
 }
 
+// MARK: - StatusBarStructureState
+
 struct StatusBarStructureState {
     let footer: StructureFooterState
     let onAdd: () -> Void
     let onRemove: () -> Void
 }
 
+// MARK: - MainStatusBarView
+
 struct MainStatusBarView: View {
+    // MARK: Internal
+
     let snapshot: StatusBarSnapshot
     let filterState: TabFilterState
     let selectedRowIndices: Set<Int>
     @Binding var viewMode: ResultsViewMode
+
     let paginationCallbacks: PaginationCallbacks
     let columnState: StatusBarColumnState
     let structureState: StatusBarStructureState
@@ -45,39 +49,6 @@ struct MainStatusBarView: View {
     let onFetchAll: (() -> Void)?
     let onAddRow: (() -> Void)?
     let onExport: (() -> Void)?
-
-    @State private var showColumnPopover = false
-
-    private var isStructureMode: Bool { viewMode == .structure }
-    private var showsDataChrome: Bool { !isStructureMode }
-
-    static func showsAddRow(viewMode: ResultsViewMode, canAddRow: Bool) -> Bool {
-        viewMode == .data && canAddRow
-    }
-
-    static func showsExport(viewMode: ResultsViewMode, hasColumns: Bool) -> Bool {
-        hasColumns && (viewMode == .data || viewMode == .chart)
-    }
-
-    private var filterToggleHelp: String {
-        helpText(String(localized: "Toggle Filters"), shortcut: .toggleFilters)
-    }
-
-    private var addRowHelp: String {
-        helpText(String(localized: "Add Row"), shortcut: .addRow)
-    }
-
-    private func helpText(_ label: String, shortcut action: ShortcutAction) -> String {
-        AppSettingsManager.shared.keyboard.shortcutHint(label, for: action)
-    }
-
-    private var columnsAccessibilityLabel: String {
-        guard !columnState.hidden.isEmpty else {
-            return String(localized: "Columns")
-        }
-        let visible = columnState.all.count - columnState.hidden.count
-        return String(format: String(localized: "%d of %d columns visible"), visible, columnState.all.count)
-    }
 
     var body: some View {
         HStack {
@@ -125,7 +96,8 @@ struct MainStatusBarView: View {
                     }
 
                     if snapshot.tabType == .table, !snapshot.pagination.isLoadingMore,
-                       snapshot.pagination.isApproximateRowCount || snapshot.pagination.totalRowCount == nil {
+                       snapshot.pagination.isApproximateRowCount || snapshot.pagination.totalRowCount == nil
+                    {
                         if snapshot.pagination.isCountingExact {
                             ProgressView()
                                 .controlSize(.small)
@@ -142,7 +114,7 @@ struct MainStatusBarView: View {
                         }
                     }
 
-                    if snapshot.tabType == .query && snapshot.pagination.hasMoreRows && !snapshot.pagination.isLoadingMore {
+                    if snapshot.tabType == .query, snapshot.pagination.hasMoreRows, !snapshot.pagination.isLoadingMore {
                         Text("·")
                             .font(.caption)
                             .foregroundStyle(.quaternary)
@@ -209,8 +181,8 @@ struct MainStatusBarView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: !columnState.hidden.isEmpty
-                                        ? "eye.slash.circle.fill"
-                                        : "eye.circle")
+                                    ? "eye.slash.circle.fill"
+                                    : "eye.circle")
                                 Text("Columns")
                                 if !columnState.hidden.isEmpty {
                                     let visible = columnState.all.count - columnState.hidden.count
@@ -240,8 +212,8 @@ struct MainStatusBarView: View {
                         )) {
                             HStack(spacing: 4) {
                                 Image(systemName: filterState.hasAppliedFilters
-                                        ? "line.3.horizontal.decrease.circle.fill"
-                                        : "line.3.horizontal.decrease.circle")
+                                    ? "line.3.horizontal.decrease.circle.fill"
+                                    : "line.3.horizontal.decrease.circle")
                                 Text("Filters")
                                 if filterState.hasAppliedFilters {
                                     Text("(\(filterState.appliedFilters.count))")
@@ -281,7 +253,42 @@ struct MainStatusBarView: View {
         }
     }
 
-    @ViewBuilder
+    static func showsAddRow(viewMode: ResultsViewMode, canAddRow: Bool) -> Bool {
+        viewMode == .data && canAddRow
+    }
+
+    static func showsExport(viewMode: ResultsViewMode, hasColumns: Bool) -> Bool {
+        hasColumns && (viewMode == .data || viewMode == .chart)
+    }
+
+    // MARK: Private
+
+    @State private var showColumnPopover = false
+
+    private var isStructureMode: Bool {
+        viewMode == .structure
+    }
+
+    private var showsDataChrome: Bool {
+        !isStructureMode
+    }
+
+    private var filterToggleHelp: String {
+        helpText(String(localized: "Toggle Filters"), shortcut: .toggleFilters)
+    }
+
+    private var addRowHelp: String {
+        helpText(String(localized: "Add Row"), shortcut: .addRow)
+    }
+
+    private var columnsAccessibilityLabel: String {
+        guard !columnState.hidden.isEmpty else {
+            return String(localized: "Columns")
+        }
+        let visible = columnState.all.count - columnState.hidden.count
+        return String(format: String(localized: "%d of %d columns visible"), visible, columnState.all.count)
+    }
+
     private func structureFooterControls(state: StructureFooterState) -> some View {
         AddRemoveControlGroup(
             addLabel: state.addLabel,
@@ -291,5 +298,9 @@ struct MainStatusBarView: View {
             onAdd: { structureState.onAdd() },
             onRemove: { structureState.onRemove() }
         )
+    }
+
+    private func helpText(_ label: String, shortcut action: ShortcutAction) -> String {
+        AppSettingsManager.shared.keyboard.shortcutHint(label, for: action)
     }
 }

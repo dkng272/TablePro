@@ -1,10 +1,3 @@
-//
-//  ResultSet.swift
-//  TablePro
-//
-//  A single result set from one SQL statement execution.
-//
-
 import Foundation
 import Observation
 import os
@@ -12,6 +5,16 @@ import os
 @MainActor
 @Observable
 final class ResultSet: Identifiable {
+    // MARK: Lifecycle
+
+    init(id: UUID = UUID(), label: String, tableRows: TableRows = TableRows()) {
+        self.id = id
+        self.label = label
+        self.tableRows = tableRows
+    }
+
+    // MARK: Internal
+
     let id: UUID
     var label: String
     var tableRows: TableRows
@@ -31,11 +34,7 @@ final class ResultSet: Identifiable {
     var columnLayout = ColumnLayoutState()
     var chartSpec: ChartSpec?
 
-    var resultColumns: [String] { tableRows.columns }
-
-    init(id: UUID = UUID(), label: String, tableRows: TableRows = TableRows()) {
-        self.id = id
-        self.label = label
-        self.tableRows = tableRows
+    var resultColumns: [String] {
+        tableRows.columns
     }
 }

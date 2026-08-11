@@ -1,14 +1,22 @@
 import SwiftUI
 
+// MARK: - ChartConfigurationPolicy
+
 enum ChartConfigurationPolicy {
     static func selectX(
         _ column: ChartColumnID,
         in spec: ChartSpec,
         tableRows: TableRows
-    ) -> ChartSpec {
-        guard column != spec.xColumn else { return spec }
+    )
+        -> ChartSpec
+    {
+        guard column != spec.xColumn else {
+            return spec
+        }
         let numericColumns = tableRows.columns.enumerated().compactMap { index, name -> ChartColumnID? in
-            guard ChartSpecInferrer.isNumericColumn(at: index, in: tableRows) else { return nil }
+            guard ChartSpecInferrer.isNumericColumn(at: index, in: tableRows) else {
+                return nil
+            }
             return ChartColumnID(ordinal: index, name: name)
         }
         let numericColumnSet = Set(numericColumns)
@@ -18,7 +26,9 @@ enum ChartConfigurationPolicy {
         if yColumns.isEmpty, let replacement = numericColumns.first(where: { $0 != column }) {
             yColumns = [replacement]
         }
-        guard !yColumns.isEmpty else { return spec }
+        guard !yColumns.isEmpty else {
+            return spec
+        }
 
         var updated = spec
         updated.xColumn = column
@@ -37,15 +47,14 @@ extension ChartSortOrder {
     }
 }
 
-struct ChartConfigurationBar: View {
-    let tableRows: TableRows
-    @Binding var spec: ChartSpec
+// MARK: - ChartConfigurationBar
 
-    private var columns: [ChartColumnID] {
-        tableRows.columns.enumerated().map {
-            ChartColumnID(ordinal: $0.offset, name: $0.element)
-        }
-    }
+struct ChartConfigurationBar: View {
+    // MARK: Internal
+
+    let tableRows: TableRows
+
+    @Binding var spec: ChartSpec
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -80,17 +89,12 @@ struct ChartConfigurationBar: View {
         .background(.bar)
     }
 
-    private var yColumnMenu: some View {
-        Menu {
-            ForEach(columns) { column in
-                Toggle(column.name, isOn: yColumnBinding(for: column))
-                    .disabled(column == spec.xColumn && !spec.yColumns.contains(column))
-            }
-        } label: {
-            Label(yColumnSummary, systemImage: "chart.bar.xaxis")
+    // MARK: Private
+
+    private var columns: [ChartColumnID] {
+        tableRows.columns.enumerated().map {
+            ChartColumnID(ordinal: $0.offset, name: $0.element)
         }
-        .accessibilityLabel(String(localized: "Y Axis"))
-        .help(String(localized: "Choose one or more Y-axis columns"))
     }
 
     private var xColumnBinding: Binding<ChartColumnID> {
@@ -104,6 +108,29 @@ struct ChartConfigurationBar: View {
                 )
             }
         )
+    }
+
+    private var yColumnSummary: String {
+        if spec.yColumns.count == 1, let column = spec.yColumns.first {
+            return column.name
+        }
+        return String(
+            localized: "Y Axis (\(spec.yColumns.count))",
+            comment: "Chart configuration summary showing the number of selected Y-axis columns"
+        )
+    }
+
+    private var yColumnMenu: some View {
+        Menu {
+            ForEach(columns) { column in
+                Toggle(column.name, isOn: yColumnBinding(for: column))
+                    .disabled(column == spec.xColumn && !spec.yColumns.contains(column))
+            }
+        } label: {
+            Label(yColumnSummary, systemImage: "chart.bar.xaxis")
+        }
+        .accessibilityLabel(String(localized: "Y Axis"))
+        .help(String(localized: "Choose one or more Y-axis columns"))
     }
 
     private var seriesPicker: some View {
@@ -122,16 +149,6 @@ struct ChartConfigurationBar: View {
             }
         }
         .help(String(localized: "Choose the chart's X-axis sort order"))
-    }
-
-    private var yColumnSummary: String {
-        if spec.yColumns.count == 1, let column = spec.yColumns.first {
-            return column.name
-        }
-        return String(
-            localized: "Y Axis (\(spec.yColumns.count))",
-            comment: "Chart configuration summary showing the number of selected Y-axis columns"
-        )
     }
 
     private func yColumnBinding(for column: ChartColumnID) -> Binding<Bool> {
