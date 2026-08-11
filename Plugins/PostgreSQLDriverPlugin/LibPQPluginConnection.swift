@@ -750,19 +750,16 @@ final class LibPQPluginConnection: @unchecked Sendable {
                     return
                 }
 
-                var headerSent = false
-                var columnOids: [UInt32] = []
-                let batchSize = 5_000
-                var batch: [PluginRow] = []
-                batch.reserveCapacity(batchSize)
+                var rowStreamState = LibPQSingleRowStreamState()
 
                 while let result = PQgetResult(conn) {
                     let status = PQresultStatus(result)
 
                     if status == PGRES_SINGLE_TUPLE {
-                        if !headerSent {
+                        if !rowStreamState.headerSent {
                             let numFields = Int(PQnfields(result))
                             var columns: [String] = []
+                            var columnOids: [UInt32] = []
                             var columnTypeNames: [String] = []
                             columns.reserveCapacity(numFields)
                             columnOids.reserveCapacity(numFields)
@@ -779,11 +776,14 @@ final class LibPQPluginConnection: @unchecked Sendable {
                                 columnTypeNames.append(pgOidToTypeName(oid))
                             }
 
-                            continuation.yield(.header(PluginStreamHeader(
+                            if let header = rowStreamState.header(
                                 columns: columns,
+                                columnOids: columnOids,
                                 columnTypeNames: columnTypeNames,
                                 estimatedRowCount: nil
-                            )))
+                            ) {
+                                continuation.yield(.header(header))
+                            }
                         }
 
                         let numFields = Int(PQnfields(result))
@@ -795,20 +795,18 @@ final class LibPQPluginConnection: @unchecked Sendable {
                                 from: result,
                                 row: 0,
                                 column: Int32(colIndex),
-                                oid: columnOids[colIndex]
+                                oid: rowStreamState.columnOids[colIndex]
                             ))
                         }
 
                         PQclear(result)
-                        batch.append(row)
-                        if batch.count >= batchSize {
-                            continuation.yield(.rows(batch))
-                            batch.removeAll(keepingCapacity: true)
+                        if let rows = rowStreamState.append(row) {
+                            continuation.yield(.rows(rows))
                         }
 
                         if Task.isCancelled {
-                            if !batch.isEmpty {
-                                continuation.yield(.rows(batch))
+                            if let rows = rowStreamState.flush() {
+                                continuation.yield(.rows(rows))
                             }
                             Self.cancelAndDrain(conn, suppressCancel: suppressCancel)
                             streamState.lock.lock()
@@ -818,11 +816,13 @@ final class LibPQPluginConnection: @unchecked Sendable {
                             return
                         }
                     } else if status == PGRES_TUPLES_OK {
-                        if !headerSent {
+                        if !rowStreamState.headerSent {
                             let fieldCount = Int(PQnfields(result))
                             var columns: [String] = []
+                            var columnOids: [UInt32] = []
                             var columnTypeNames: [String] = []
                             columns.reserveCapacity(fieldCount)
+                            columnOids.reserveCapacity(fieldCount)
                             columnTypeNames.reserveCapacity(fieldCount)
 
                             for index in 0..<fieldCount {
@@ -832,15 +832,18 @@ final class LibPQPluginConnection: @unchecked Sendable {
                                     columns.append("column_\(index)")
                                 }
                                 let oid = UInt32(PQftype(result, Int32(index)))
+                                columnOids.append(oid)
                                 columnTypeNames.append(pgOidToTypeName(oid))
                             }
 
-                            continuation.yield(.header(PluginStreamHeader(
+                            if let header = rowStreamState.header(
                                 columns: columns,
+                                columnOids: columnOids,
                                 columnTypeNames: columnTypeNames,
                                 estimatedRowCount: 0
-                            )))
-                            headerSent = true
+                            ) {
+                                continuation.yield(.header(header))
+                            }
                         }
                         PQclear(result)
                         break
@@ -863,8 +866,8 @@ final class LibPQPluginConnection: @unchecked Sendable {
                     }
                 }
 
-                if !batch.isEmpty {
-                    continuation.yield(.rows(batch))
+                if let rows = rowStreamState.flush() {
+                    continuation.yield(.rows(rows))
                 }
 
                 streamState.lock.lock()

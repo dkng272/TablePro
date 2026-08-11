@@ -347,6 +347,7 @@ targets:
       - Plugins/MySQLDriverPlugin/MySQLTransactionStatement.swift
       - Plugins/PostgreSQLDriverPlugin/ColumnQueryShape.swift
       - Plugins/PostgreSQLDriverPlugin/LibPQByteaDecoder.swift
+      - Plugins/PostgreSQLDriverPlugin/LibPQSingleRowStreamState.swift
       - Plugins/PostgreSQLDriverPlugin/LibPQSSLMapping.swift
       - Plugins/PostgreSQLDriverPlugin/PostGISSpatialRewrite.swift
       - Plugins/PostgreSQLDriverPlugin/PostgreSQLCatalogPresence.swift
