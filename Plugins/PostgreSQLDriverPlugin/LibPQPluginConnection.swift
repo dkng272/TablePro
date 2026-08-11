@@ -497,60 +497,19 @@ final class LibPQPluginConnection: @unchecked Sendable {
         let generation = cancellationGate.beginQuery()
         defer { cancellationGate.endQuery(generation) }
 
-        var paramValues: [UnsafePointer<CChar>?] = []
-        var paramLengths: [Int32] = []
-        var paramFormats: [Int32] = []
-        var allocations: [UnsafeMutableRawPointer] = []
-
-        defer {
-            for ptr in allocations {
-                free(ptr)
-            }
-        }
-
-        paramValues.reserveCapacity(parameters.count)
-        paramLengths.reserveCapacity(parameters.count)
-        paramFormats.reserveCapacity(parameters.count)
-
-        for param in parameters {
-            switch param {
-            case .null:
-                paramValues.append(nil)
-                paramLengths.append(0)
-                paramFormats.append(0)
-            case .text(let str):
-                guard let cStr = strdup(str) else {
-                    throw LibPQPluginError(message: "Failed to allocate parameter buffer", sqlState: nil, detail: nil)
-                }
-                allocations.append(UnsafeMutableRawPointer(cStr))
-                paramValues.append(UnsafePointer(cStr))
-                paramLengths.append(0)
-                paramFormats.append(0)
-            case .bytes(let data):
-                let byteCount = data.count
-                guard let raw = malloc(max(byteCount, 1)) else {
-                    throw LibPQPluginError(message: "Failed to allocate parameter buffer", sqlState: nil, detail: nil)
-                }
-                allocations.append(raw)
-                if byteCount > 0 {
-                    data.copyBytes(to: raw.assumingMemoryBound(to: UInt8.self), count: byteCount)
-                }
-                paramValues.append(UnsafePointer(raw.assumingMemoryBound(to: CChar.self)))
-                paramLengths.append(Int32(byteCount))
-                paramFormats.append(1)
-            }
-        }
+        let bindings = try makeParameterBindings(parameters)
+        defer { bindings.cleanup() }
 
         let localQuery = String(query)
         let result: OpaquePointer? = localQuery.withCString { queryPtr in
-            paramLengths.withUnsafeBufferPointer { lengthsBuf in
-                paramFormats.withUnsafeBufferPointer { formatsBuf in
+            bindings.lengths.withUnsafeBufferPointer { lengthsBuf in
+                bindings.formats.withUnsafeBufferPointer { formatsBuf in
                     PQexecParams(
                         conn,
                         queryPtr,
                         Int32(parameters.count),
                         nil,
-                        paramValues,
+                        bindings.values,
                         lengthsBuf.baseAddress,
                         formatsBuf.baseAddress,
                         0
@@ -594,6 +553,80 @@ final class LibPQPluginConnection: @unchecked Sendable {
 
     // MARK: - Streaming Query
 
+    private struct ParameterBindings {
+        let values: [UnsafePointer<CChar>?]
+        let lengths: [Int32]
+        let formats: [Int32]
+        let allocations: [UnsafeMutableRawPointer]
+
+        func cleanup() {
+            for pointer in allocations {
+                free(pointer)
+            }
+        }
+    }
+
+    private func makeParameterBindings(
+        _ parameters: [PluginCellValue]
+    ) throws -> ParameterBindings {
+        var values: [UnsafePointer<CChar>?] = []
+        var lengths: [Int32] = []
+        var formats: [Int32] = []
+        var allocations: [UnsafeMutableRawPointer] = []
+
+        values.reserveCapacity(parameters.count)
+        lengths.reserveCapacity(parameters.count)
+        formats.reserveCapacity(parameters.count)
+
+        for parameter in parameters {
+            switch parameter {
+            case .null:
+                values.append(nil)
+                lengths.append(0)
+                formats.append(0)
+            case .text(let string):
+                guard let pointer = strdup(string) else {
+                    for allocation in allocations { free(allocation) }
+                    throw LibPQPluginError(
+                        message: "Failed to allocate parameter buffer",
+                        sqlState: nil,
+                        detail: nil
+                    )
+                }
+                allocations.append(UnsafeMutableRawPointer(pointer))
+                values.append(UnsafePointer(pointer))
+                lengths.append(0)
+                formats.append(0)
+            case .bytes(let data):
+                guard let pointer = malloc(max(data.count, 1)) else {
+                    for allocation in allocations { free(allocation) }
+                    throw LibPQPluginError(
+                        message: "Failed to allocate parameter buffer",
+                        sqlState: nil,
+                        detail: nil
+                    )
+                }
+                allocations.append(pointer)
+                if !data.isEmpty {
+                    data.copyBytes(
+                        to: pointer.assumingMemoryBound(to: UInt8.self),
+                        count: data.count
+                    )
+                }
+                values.append(UnsafePointer(pointer.assumingMemoryBound(to: CChar.self)))
+                lengths.append(Int32(data.count))
+                formats.append(1)
+            }
+        }
+
+        return ParameterBindings(
+            values: values,
+            lengths: lengths,
+            formats: formats,
+            allocations: allocations
+        )
+    }
+
     private static func cancelAndDrain(_ conn: OpaquePointer, suppressCancel: Bool) {
         if !suppressCancel {
             let cancelObj = PQgetCancel(conn)
@@ -606,7 +639,10 @@ final class LibPQPluginConnection: @unchecked Sendable {
         while let res = PQgetResult(conn) { PQclear(res) }
     }
 
-    func streamQuery(_ query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {
+    func streamQuery(
+        _ query: String,
+        parameters: [PluginCellValue]? = nil
+    ) -> AsyncThrowingStream<PluginStreamElement, Error> {
         let queryToRun = String(query)
         let queue = self.queue
         let suppressCancel = suppressServerSideCancel
@@ -614,6 +650,7 @@ final class LibPQPluginConnection: @unchecked Sendable {
         final class StreamState: @unchecked Sendable {
             var conn: OpaquePointer?
             var drained = false
+            var cancelled = false
             let lock = NSLock()
         }
         let streamState = StreamState()
@@ -627,7 +664,12 @@ final class LibPQPluginConnection: @unchecked Sendable {
         streamState.lock.unlock()
 
         return AsyncThrowingStream(bufferingPolicy: .unbounded) { continuation in
-            continuation.onTermination = { @Sendable _ in
+            continuation.onTermination = { @Sendable termination in
+                guard case .cancelled = termination else { return }
+                streamState.lock.lock()
+                streamState.cancelled = true
+                streamState.lock.unlock()
+                self.cancelCurrentQuery()
                 queue.async {
                     streamState.lock.lock()
                     let conn = streamState.conn
@@ -648,10 +690,46 @@ final class LibPQPluginConnection: @unchecked Sendable {
                 let generation = cancellationGate.beginQuery()
                 defer { cancellationGate.endQuery(generation) }
 
+                streamState.lock.lock()
+                let cancelledBeforeStart = streamState.cancelled
+                streamState.lock.unlock()
+                if cancelledBeforeStart {
+                    continuation.finish(throwing: CancellationError())
+                    return
+                }
+
                 while let res = PQgetResult(conn) { PQclear(res) }
 
+                let bindings: ParameterBindings?
+                do {
+                    bindings = try parameters.map(makeParameterBindings)
+                } catch {
+                    streamState.lock.lock()
+                    streamState.drained = true
+                    streamState.lock.unlock()
+                    continuation.finish(throwing: error)
+                    return
+                }
+                defer { bindings?.cleanup() }
+
                 let sendOk = queryToRun.withCString { queryPtr in
-                    PQsendQuery(conn, queryPtr)
+                    guard let bindings else {
+                        return PQsendQuery(conn, queryPtr)
+                    }
+                    return bindings.lengths.withUnsafeBufferPointer { lengthsBuffer in
+                        bindings.formats.withUnsafeBufferPointer { formatsBuffer in
+                            PQsendQueryParams(
+                                conn,
+                                queryPtr,
+                                Int32(parameters?.count ?? 0),
+                                nil,
+                                bindings.values,
+                                lengthsBuffer.baseAddress,
+                                formatsBuffer.baseAddress,
+                                0
+                            )
+                        }
+                    }
                 }
 
                 if sendOk == 0 {
@@ -706,7 +784,6 @@ final class LibPQPluginConnection: @unchecked Sendable {
                                 columnTypeNames: columnTypeNames,
                                 estimatedRowCount: nil
                             )))
-                            headerSent = true
                         }
 
                         let numFields = Int(PQnfields(result))
@@ -741,6 +818,30 @@ final class LibPQPluginConnection: @unchecked Sendable {
                             return
                         }
                     } else if status == PGRES_TUPLES_OK {
+                        if !headerSent {
+                            let fieldCount = Int(PQnfields(result))
+                            var columns: [String] = []
+                            var columnTypeNames: [String] = []
+                            columns.reserveCapacity(fieldCount)
+                            columnTypeNames.reserveCapacity(fieldCount)
+
+                            for index in 0..<fieldCount {
+                                if let namePointer = PQfname(result, Int32(index)) {
+                                    columns.append(String(cString: namePointer))
+                                } else {
+                                    columns.append("column_\(index)")
+                                }
+                                let oid = UInt32(PQftype(result, Int32(index)))
+                                columnTypeNames.append(pgOidToTypeName(oid))
+                            }
+
+                            continuation.yield(.header(PluginStreamHeader(
+                                columns: columns,
+                                columnTypeNames: columnTypeNames,
+                                estimatedRowCount: 0
+                            )))
+                            headerSent = true
+                        }
                         PQclear(result)
                         break
                     } else if status == PGRES_COMMAND_OK {

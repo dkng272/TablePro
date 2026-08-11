@@ -594,6 +594,16 @@ final class MySQLPluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         return conn.streamQuery(query)
     }
 
+    func streamRows(
+        query: String,
+        parameters: [PluginCellValue]
+    ) -> AsyncThrowingStream<PluginStreamElement, Error> {
+        guard let conn = mariadbConnection else {
+            return AsyncThrowingStream { $0.finish(throwing: MariaDBPluginError.notConnected) }
+        }
+        return conn.streamParameterizedQuery(query, parameters: parameters)
+    }
+
     // MARK: - Database Operations
 
     func fetchDatabases() async throws -> [String] {
