@@ -45,9 +45,23 @@ struct MainStatusBarLayoutTests {
             ),
             onToggleFilters: {},
             onFetchAll: nil,
-            onAddRow: nil
+            onAddRow: nil,
+            onExport: nil
         )
         #expect(type(of: view.body) != Never.self)
+    }
+
+    @Test("Export is available for row results in Data and Chart modes")
+    func exportVisibility() {
+        #expect(MainStatusBarView.showsExport(viewMode: .data, hasColumns: true))
+        #expect(MainStatusBarView.showsExport(viewMode: .chart, hasColumns: true))
+        #expect(!MainStatusBarView.showsExport(viewMode: .structure, hasColumns: true))
+        #expect(!MainStatusBarView.showsExport(viewMode: .data, hasColumns: false))
+    }
+
+    @Test("Add Row remains hidden in Chart mode")
+    func addRowHiddenInChartMode() {
+        #expect(!MainStatusBarView.showsAddRow(viewMode: .chart, canAddRow: true))
     }
 
     @Test("Add Row button shows only in Data mode when adding is allowed")

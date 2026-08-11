@@ -563,7 +563,14 @@ struct MainEditorContentView: View {
                     columnLayout: tab.columnLayout
                 )
                 .id(tab.id)
-            case .data, .chart:
+            case .chart:
+                resultTabBarSection(tab: tab)
+                QueryResultChartView(
+                    tableRows: resolvedTableRows(for: tab),
+                    spec: chartSpecBinding(for: tab)
+                )
+                .id(tab.display.activeResultSetId)
+            case .data:
                 if let explainText = tab.display.explainText {
                     ExplainResultView(text: explainText, executionTime: tab.display.explainExecutionTime, plan: tab.display.explainPlan)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -716,6 +723,13 @@ struct MainEditorContentView: View {
         coordinator.tabSessionRegistry.existingTableRows(for: tab.id) ?? TableRows()
     }
 
+    private func chartSpecBinding(for tab: QueryTab) -> Binding<ChartSpec?> {
+        Binding(
+            get: { tab.display.activeResultSet?.chartSpec },
+            set: { tab.display.activeResultSet?.chartSpec = $0 }
+        )
+    }
+
     private func displayFormats(for tab: QueryTab) -> [ValueDisplayFormat?] {
         let settings = AppSettingsManager.shared.dataGrid
         let service = ValueDisplayFormatService.shared
@@ -838,7 +852,8 @@ struct MainEditorContentView: View {
             ),
             onToggleFilters: { coordinator.toggleFilterPanel() },
             onFetchAll: { coordinator.fetchAllRows() },
-            onAddRow: currentTabAllowsAddRow ? { onAddRow() } : nil
+            onAddRow: currentTabAllowsAddRow ? { onAddRow() } : nil,
+            onExport: { coordinator.commandActions?.exportQueryResults() }
         )
     }
 

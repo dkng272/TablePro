@@ -44,6 +44,7 @@ struct MainStatusBarView: View {
     let onToggleFilters: () -> Void
     let onFetchAll: (() -> Void)?
     let onAddRow: (() -> Void)?
+    let onExport: (() -> Void)?
 
     @State private var showColumnPopover = false
 
@@ -52,6 +53,10 @@ struct MainStatusBarView: View {
 
     static func showsAddRow(viewMode: ResultsViewMode, canAddRow: Bool) -> Bool {
         viewMode == .data && canAddRow
+    }
+
+    static func showsExport(viewMode: ResultsViewMode, hasColumns: Bool) -> Bool {
+        hasColumns && (viewMode == .data || viewMode == .chart)
     }
 
     private var filterToggleHelp: String {
@@ -80,21 +85,23 @@ struct MainStatusBarView: View {
                 if snapshot.tabType == .table, snapshot.hasTableName {
                     Picker(String(localized: "View Mode"), selection: $viewMode) {
                         Label("Data", systemImage: "tablecells").tag(ResultsViewMode.data)
+                        Label("Chart", systemImage: "chart.xyaxis.line").tag(ResultsViewMode.chart)
                         Label("Structure", systemImage: "list.bullet.rectangle").tag(ResultsViewMode.structure)
                         Label("JSON", systemImage: "curlybraces").tag(ResultsViewMode.json)
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 260)
+                    .frame(width: 360)
                     .controlSize(.small)
                 } else if snapshot.hasColumns {
                     Picker(String(localized: "View Mode"), selection: $viewMode) {
                         Label("Data", systemImage: "tablecells").tag(ResultsViewMode.data)
+                        Label("Chart", systemImage: "chart.xyaxis.line").tag(ResultsViewMode.chart)
                         Label("JSON", systemImage: "curlybraces").tag(ResultsViewMode.json)
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 140)
+                    .frame(width: 240)
                     .controlSize(.small)
                 }
             }
@@ -169,6 +176,19 @@ struct MainStatusBarView: View {
                 }
 
                 if showsDataChrome {
+                    if Self.showsExport(viewMode: viewMode, hasColumns: snapshot.hasColumns), let onExport {
+                        Button {
+                            onExport()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.up")
+                                Text("Export")
+                            }
+                        }
+                        .controlSize(.small)
+                        .accessibilityLabel(String(localized: "Export Query Results"))
+                    }
+
                     if Self.showsAddRow(viewMode: viewMode, canAddRow: onAddRow != nil), let onAddRow {
                         Button {
                             onAddRow()
