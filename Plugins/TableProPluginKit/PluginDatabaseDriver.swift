@@ -204,6 +204,10 @@ public protocol PluginDatabaseDriver: AnyObject, Sendable {
 
     // Streaming row fetch for export
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error>
+    func streamRows(
+        query: String,
+        parameters: [PluginCellValue]
+    ) -> AsyncThrowingStream<PluginStreamElement, Error>
 }
 
 public extension PluginDatabaseDriver {
@@ -409,7 +413,7 @@ public extension PluginDatabaseDriver {
 
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let result = try await self.execute(query: query)
                     let header = PluginStreamHeader(
@@ -425,6 +429,21 @@ public extension PluginDatabaseDriver {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { @Sendable termination in
+                guard case .cancelled = termination else { return }
+                task.cancel()
+            }
+        }
+    }
+
+    func streamRows(
+        query: String,
+        parameters: [PluginCellValue]
+    ) -> AsyncThrowingStream<PluginStreamElement, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: PluginExportError.exportFailed(
+                "This database driver does not support parameterized streaming"
+            ))
         }
     }
 

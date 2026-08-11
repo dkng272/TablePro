@@ -133,6 +133,16 @@ final class LibPQDriverCore: @unchecked Sendable {
         return pqConn.streamQuery(query)
     }
 
+    func streamRows(
+        query: String,
+        parameters: [PluginCellValue]
+    ) -> AsyncThrowingStream<PluginStreamElement, Error> {
+        guard let pqConn = libpqConnection else {
+            return AsyncThrowingStream { $0.finish(throwing: LibPQPluginError.notConnected) }
+        }
+        return pqConn.streamQuery(query, parameters: parameters)
+    }
+
     func cancelQuery() {
         libpqConnection?.cancelCurrentQuery()
     }
@@ -224,6 +234,13 @@ extension LibPQBackedDriver {
 
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {
         core.streamRows(query: query)
+    }
+
+    func streamRows(
+        query: String,
+        parameters: [PluginCellValue]
+    ) -> AsyncThrowingStream<PluginStreamElement, Error> {
+        core.streamRows(query: query, parameters: parameters)
     }
 
     func cancelQuery() throws {

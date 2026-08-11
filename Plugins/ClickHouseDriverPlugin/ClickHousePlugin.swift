@@ -484,15 +484,38 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     // MARK: - Streaming
 
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {
+        streamRows(query: query, parameters: nil)
+    }
+
+    func streamRows(
+        query: String,
+        parameters: [PluginCellValue]
+    ) -> AsyncThrowingStream<PluginStreamElement, Error> {
+        let (convertedQuery, paramMap) = Self.buildClickHouseParams(
+            query: query,
+            parameters: parameters
+        )
+        return streamRows(query: convertedQuery, parameters: paramMap)
+    }
+
+    private func streamRows(
+        query: String,
+        parameters: [String: String?]?
+    ) -> AsyncThrowingStream<PluginStreamElement, Error> {
         return AsyncThrowingStream(bufferingPolicy: .unbounded) { continuation in
             let streamTask = Task {
                 do {
-                    try await self.performStreamRows(query: query, continuation: continuation)
+                    try await self.performStreamRows(
+                        query: query,
+                        parameters: parameters,
+                        continuation: continuation
+                    )
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
-            continuation.onTermination = { @Sendable _ in
+            continuation.onTermination = { @Sendable termination in
+                guard case .cancelled = termination else { return }
                 streamTask.cancel()
             }
         }
@@ -500,6 +523,7 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
 
     private func performStreamRows(
         query: String,
+        parameters: [String: String?]?,
         continuation: AsyncThrowingStream<PluginStreamElement, Error>.Continuation
     ) async throws {
         lock.lock()
@@ -515,7 +539,13 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             trimmedQuery = String(trimmedQuery.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        let headerResult = try await executeRaw("\(trimmedQuery) LIMIT 0")
+        let headerQuery = "\(trimmedQuery) LIMIT 0"
+        let headerResult: CHQueryResult
+        if let parameters {
+            headerResult = try await executeRawWithParams(headerQuery, params: parameters)
+        } else {
+            headerResult = try await executeRaw(headerQuery)
+        }
         continuation.yield(.header(PluginStreamHeader(
             columns: headerResult.columns,
             columnTypeNames: headerResult.columnTypeNames,
@@ -530,7 +560,9 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         }
 
         let streamRequest = try buildStreamRequest(
-            query: trimmedQuery, database: database
+            query: trimmedQuery,
+            database: database,
+            parameters: parameters
         )
 
         let (bytes, response) = try await session.bytes(for: streamRequest)
@@ -594,7 +626,11 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
         continuation.finish()
     }
 
-    private func buildStreamRequest(query: String, database: String) throws -> URLRequest {
+    private func buildStreamRequest(
+        query: String,
+        database: String,
+        parameters: [String: String?]?
+    ) throws -> URLRequest {
         let useTLS = config.ssl.isEnabled
 
         var components = URLComponents()
@@ -608,6 +644,11 @@ final class ClickHousePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
             queryItems.append(URLQueryItem(name: "database", value: database))
         }
         queryItems.append(URLQueryItem(name: "default_format", value: "JSONEachRow"))
+        if let parameters {
+            for (key, value) in parameters.sorted(by: { $0.key < $1.key }) {
+                queryItems.append(URLQueryItem(name: "param_\(key)", value: value))
+            }
+        }
         components.queryItems = queryItems
 
         guard let url = components.url else {

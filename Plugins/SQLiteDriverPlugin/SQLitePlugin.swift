@@ -216,10 +216,15 @@ private actor SQLiteConnectionActor {
         )
     }
 
-    func streamQuery(_ query: String, continuation: AsyncThrowingStream<PluginStreamElement, Error>.Continuation) throws {
+    func streamQuery(
+        _ query: String,
+        parameters: [PluginCellValue] = [],
+        continuation: AsyncThrowingStream<PluginStreamElement, Error>.Continuation
+    ) throws {
         guard let db else {
             throw SQLitePluginError.notConnected
         }
+        try Task.checkCancellation()
 
         var statement: OpaquePointer?
 
@@ -228,6 +233,9 @@ private actor SQLiteConnectionActor {
             let errorMessage = String(cString: sqlite3_errmsg(db))
             throw SQLitePluginError.queryFailed(errorMessage)
         }
+        defer { sqlite3_finalize(statement) }
+
+        try bindParameters(parameters, to: statement, database: db)
 
         let columnCount = sqlite3_column_count(statement)
         var columns: [String] = []
@@ -257,14 +265,10 @@ private actor SQLiteConnectionActor {
         var batch: [PluginRow] = []
         batch.reserveCapacity(batchSize)
 
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var stepResult = sqlite3_step(statement)
+        while stepResult == SQLITE_ROW {
             if Task.isCancelled {
-                if !batch.isEmpty {
-                    continuation.yield(.rows(batch))
-                }
-                sqlite3_finalize(statement)
-                continuation.finish(throwing: CancellationError())
-                return
+                throw CancellationError()
             }
 
             var row: [PluginCellValue] = []
@@ -292,14 +296,58 @@ private actor SQLiteConnectionActor {
                 continuation.yield(.rows(batch))
                 batch.removeAll(keepingCapacity: true)
             }
+            stepResult = sqlite3_step(statement)
+        }
+
+        if Task.isCancelled || stepResult == SQLITE_INTERRUPT {
+            throw CancellationError()
+        }
+        if stepResult != SQLITE_DONE {
+            throw SQLitePluginError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
 
         if !batch.isEmpty {
             continuation.yield(.rows(batch))
         }
 
-        sqlite3_finalize(statement)
         continuation.finish()
+    }
+
+    private func bindParameters(
+        _ parameters: [PluginCellValue],
+        to statement: OpaquePointer?,
+        database db: OpaquePointer
+    ) throws {
+        let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+        for (index, param) in parameters.enumerated() {
+            let bindIndex = Int32(index + 1)
+            let bindResult: Int32
+
+            switch param {
+            case .null:
+                bindResult = sqlite3_bind_null(statement, bindIndex)
+            case .text(let stringValue):
+                bindResult = sqlite3_bind_text(statement, bindIndex, stringValue, -1, sqliteTransient)
+            case .bytes(let data):
+                bindResult = data.withUnsafeBytes { rawBuffer in
+                    sqlite3_bind_blob(
+                        statement,
+                        bindIndex,
+                        rawBuffer.baseAddress,
+                        Int32(data.count),
+                        sqliteTransient
+                    )
+                }
+            }
+
+            if bindResult != SQLITE_OK {
+                let errorMessage = String(cString: sqlite3_errmsg(db))
+                throw SQLitePluginError.queryFailed(
+                    "Failed to bind parameter \(index): \(errorMessage)"
+                )
+            }
+        }
     }
 
     func executeParameterizedQuery(_ query: String, parameters: [PluginCellValue]) throws -> SQLiteRawResult {
@@ -321,31 +369,7 @@ private actor SQLiteConnectionActor {
             sqlite3_finalize(statement)
         }
 
-        let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-
-        for (index, param) in parameters.enumerated() {
-            let bindIndex = Int32(index + 1)
-            let bindResult: Int32
-
-            switch param {
-            case .null:
-                bindResult = sqlite3_bind_null(statement, bindIndex)
-            case .text(let stringValue):
-                bindResult = sqlite3_bind_text(statement, bindIndex, stringValue, -1, sqliteTransient)
-            case .bytes(let data):
-                bindResult = data.withUnsafeBytes { rawBuffer -> Int32 in
-                    let baseAddress = rawBuffer.baseAddress
-                    return sqlite3_bind_blob(statement, bindIndex, baseAddress, Int32(data.count), sqliteTransient)
-                }
-            }
-
-            if bindResult != SQLITE_OK {
-                let errorMessage = String(cString: sqlite3_errmsg(db))
-                throw SQLitePluginError.queryFailed(
-                    "Failed to bind parameter \(index): \(errorMessage)"
-                )
-            }
-        }
+        try bindParameters(parameters, to: statement, database: db)
 
         let columnCount = sqlite3_column_count(statement)
         var columns: [String] = []
@@ -959,17 +983,30 @@ final class SQLitePluginDriver: PluginDatabaseDriver, @unchecked Sendable {
     // MARK: - Streaming
 
     func streamRows(query: String) -> AsyncThrowingStream<PluginStreamElement, Error> {
+        streamRows(query: query, parameters: [])
+    }
+
+    func streamRows(
+        query: String,
+        parameters: [PluginCellValue]
+    ) -> AsyncThrowingStream<PluginStreamElement, Error> {
         let queryToRun = String(query)
         return AsyncThrowingStream(bufferingPolicy: .unbounded) { continuation in
             let streamTask = Task {
                 do {
-                    try await self.connectionActor.streamQuery(queryToRun, continuation: continuation)
+                    try await self.connectionActor.streamQuery(
+                        queryToRun,
+                        parameters: parameters,
+                        continuation: continuation
+                    )
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
-            continuation.onTermination = { @Sendable _ in
+            continuation.onTermination = { @Sendable termination in
+                guard case .cancelled = termination else { return }
                 streamTask.cancel()
+                try? self.cancelQuery()
             }
         }
     }

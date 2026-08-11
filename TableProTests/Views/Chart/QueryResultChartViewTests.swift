@@ -221,6 +221,11 @@ struct QueryResultChartViewTests {
         }
     }
 
+    @Test("Turkish series-none label is localized")
+    func turkishSeriesNoneLabel() {
+        #expect(localizedChartString("None", locale: "tr") == "Yok")
+    }
+
     @Test("Invalid chart data selects a recoverable configuration state")
     func invalidChartData() {
         let rows = Self.compatibleRows()
