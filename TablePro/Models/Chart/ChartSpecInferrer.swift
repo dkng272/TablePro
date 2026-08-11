@@ -21,6 +21,10 @@ enum ChartSpecInferrer {
         return nil
     }
 
+    static func isNumericColumn(at ordinal: Int, in tableRows: TableRows) -> Bool {
+        kind(at: ordinal, in: tableRows) == .numeric
+    }
+
     private enum Kind {
         case numeric
         case temporal

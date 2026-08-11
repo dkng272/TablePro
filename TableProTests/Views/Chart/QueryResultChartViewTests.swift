@@ -140,6 +140,33 @@ struct QueryResultChartViewTests {
         #expect(updated.yColumns == [profit])
     }
 
+    @Test("Selecting X uses sampled numeric Y values when metadata is short")
+    func selectingXUsesSampledNumericY() {
+        let rows = TableRows.from(
+            queryRows: [
+                ["Q1", "10.5", "3"],
+                ["Q2", "12.0", "4"],
+            ],
+            columns: ["quarter", "revenue", "profit"],
+            columnTypes: [.text(rawType: nil)]
+        )
+        let revenue = ChartColumnID(ordinal: 1, name: "revenue")
+        let profit = ChartColumnID(ordinal: 2, name: "profit")
+        guard let original = ChartSpecInferrer.infer(from: rows) else {
+            Issue.record("Expected sampled values to infer a chart spec")
+            return
+        }
+
+        let updated = ChartConfigurationPolicy.selectX(
+            revenue,
+            in: original,
+            tableRows: rows
+        )
+
+        #expect(updated.xColumn == revenue)
+        #expect(updated.yColumns == [profit])
+    }
+
     @Test("Sort orders provide compact localized labels")
     func sortOrderLabels() {
         #expect(ChartSortOrder.allCases.map(\.localizedName) == [

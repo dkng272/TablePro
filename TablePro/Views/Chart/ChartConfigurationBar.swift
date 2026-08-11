@@ -8,13 +8,8 @@ enum ChartConfigurationPolicy {
     ) -> ChartSpec {
         guard column != spec.xColumn else { return spec }
         let numericColumns = tableRows.columns.enumerated().compactMap { index, name -> ChartColumnID? in
-            guard index < tableRows.columnTypes.count else { return nil }
-            switch tableRows.columnTypes[index] {
-            case .integer, .decimal:
-                return ChartColumnID(ordinal: index, name: name)
-            default:
-                return nil
-            }
+            guard ChartSpecInferrer.isNumericColumn(at: index, in: tableRows) else { return nil }
+            return ChartColumnID(ordinal: index, name: name)
         }
         let numericColumnSet = Set(numericColumns)
         var yColumns = spec.yColumns.filter {
